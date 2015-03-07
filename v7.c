@@ -4084,16 +4084,16 @@ static val_t s_index_of(struct v7 *v7, val_t this_obj, val_t args, int last) {
   if (!v7_is_undefined(arg0)) {
     const char *p1, *p2, *end;
     size_t i, n1, n2;
-    val_t arg1 = i_value_of(v7, v7_array_at(v7, args, 1));
     val_t sub = to_string(v7, arg0);
     this_obj = to_string(v7, this_obj);
     p1 = v7_to_string(v7, &this_obj, &n1);
     p2 = v7_to_string(v7, &sub, &n2);
 
     if (n2 <= n1) {
+      if (v7_array_length(v7, args) > 1)
+        fromIndex = v7_to_double(i_value_of(v7, v7_array_at(v7, args, 1)));
       end = p1 + n1;
       n1 = utfnlen((char *)p1, n1);
-      fromIndex = (v7_array_length(v7, args) > 1) ? v7_to_double(arg1) : n1;
       if (fromIndex > 0) {
         if (fromIndex > n1) fromIndex = n1;
         if (last)
@@ -4555,9 +4555,9 @@ V7_PRIVATE void init_string(struct v7 *v7) {
   v7_set_property(v7, v7->global_object, "String", 6, V7_PROPERTY_DONT_ENUM,
                   str);
 
+  set_cfunc_prop(v7, str, "fromCharCode", Str_fromCharCode);
   set_cfunc_prop(v7, v7->string_prototype, "charCodeAt", Str_charCodeAt);
   set_cfunc_prop(v7, v7->string_prototype, "charAt", Str_charAt);
-  set_cfunc_prop(v7, v7->string_prototype, "fromCharCode", Str_fromCharCode);
   set_cfunc_prop(v7, v7->string_prototype, "concat", Str_concat);
   set_cfunc_prop(v7, v7->string_prototype, "indexOf", Str_indexOf);
   set_cfunc_prop(v7, v7->string_prototype, "substr", Str_substr);
@@ -5278,7 +5278,9 @@ int v7_is_boolean(val_t v) { return (v & V7_TAG_MASK) == V7_TAG_BOOLEAN; }
 
 int v7_is_regexp(val_t v) { return (v & V7_TAG_MASK) == V7_TAG_REGEXP; }
 
-V7_PRIVATE struct v7_regexp *v7_to_regexp(val_t v) { return v7_to_pointer(v); }
+V7_PRIVATE struct v7_regexp *v7_to_regexp(val_t v) {
+  return (struct v7_regexp *)v7_to_pointer(v);
+}
 
 int v7_is_null(val_t v) { return v == V7_NULL; }
 
@@ -12719,30 +12721,32 @@ static val_t Regex_set_lastIndex(struct v7 *v7, val_t this_obj, val_t args) {
 }
 
 static val_t Regex_exec(struct v7 *v7, val_t this_obj, val_t args) {
-  val_t arr = v7_create_null();
   if (v7_is_regexp(this_obj) && v7_array_length(v7, args) > 0) {
     val_t s = to_string(v7, v7_array_at(v7, args, 0));
     size_t len;
     struct slre_loot sub;
     struct slre_cap *ptok = sub.caps;
-    const char *begin = v7_to_string(v7, &s, &len);
+    char *const str = (char *)v7_to_string(v7, &s, &len);
+    const char *const end = str + len;
+    const char *begin = str;
     struct v7_regexp *rp = v7_to_regexp(this_obj);
     int flag_g = slre_get_flags(rp->compiled_regexp) & SLRE_FLAG_G;
     if (rp->lastIndex < 0) rp->lastIndex = 0;
-    if (flag_g) begin = utfnshift((char *)begin, rp->lastIndex);
+    if (flag_g) begin = utfnshift(str, rp->lastIndex);
 
-    if (!slre_exec(rp->compiled_regexp, 0, begin, begin + len, &sub)) {
+    if (!slre_exec(rp->compiled_regexp, 0, begin, end, &sub)) {
       int i;
-      arr = v7_create_array(v7);
+      val_t arr = v7_create_array(v7);
 
       for (i = 0; i < sub.num_captures; i++, ptok++)
         v7_array_append(v7, arr, v7_create_string(v7, ptok->start,
                                                   ptok->end - ptok->start, 1));
-      if (flag_g) rp->lastIndex = utfnlen((char *)begin, sub.caps->end - begin);
+      if (flag_g) rp->lastIndex = utfnlen(str, sub.caps->end - str);
+      return arr;
     } else
       rp->lastIndex = 0;
   }
-  return arr;
+  return v7_create_null();
 }
 
 static val_t Regex_test(struct v7 *v7, val_t this_obj, val_t args) {
