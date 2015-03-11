@@ -4208,6 +4208,8 @@ static val_t Str_replace(struct v7 *v7, val_t this_obj, val_t args) {
   const char *s;
   size_t s_len;
   val_t out_str_o;
+  char *old_owned_mbuf_base = v7->owned_strings.buf;
+  char *old_owned_mbuf_end = v7->owned_strings.buf + v7->owned_strings.len;
   this_obj = to_string(v7, this_obj);
   s = v7_to_string(v7, &this_obj, &s_len);
 
@@ -4294,12 +4296,17 @@ static val_t Str_replace(struct v7 *v7, val_t this_obj, val_t args) {
     ptok = out_sub;
     do {
       size_t ln = ptok->end - ptok->start;
+      const char *ps = ptok->start;
+      if (ptok->start >= old_owned_mbuf_base &&
+          ptok->start < old_owned_mbuf_end) {
+        ps += v7->owned_strings.buf - old_owned_mbuf_base;
+      }
       out_str_o =
-          s_concat(v7, out_str_o, v7_create_string(v7, ptok->start, ln, 1));
+          s_concat(v7, out_str_o, v7_create_string(v7, ps,
+                                                   ln, 1));
       p += ln;
       ptok++;
     } while (--out_sub_num);
-    *p = '\0';
 
     return out_str_o;
   }
@@ -7626,12 +7633,6 @@ static double i_int_bin_op(struct v7 *v7, enum ast_tag tag, double a,
     case AST_URSHIFT:
       return (uint32_t) ia >> ((uint32_t) ib & 31);
     case AST_OR:
-      if (isnan(a)) {
-        a = 0.0;
-      }
-      if (isnan(b)) {
-        b = 0.0;
-      }
       return ia | ib;
     case AST_XOR:
       return ia ^ ib;
@@ -9413,7 +9414,8 @@ static void re_ex_num_overfl(struct slre_env *e) {
 
 static enum slre_opcode re_countrep(struct slre_env *e) {
   e->min_rep = 0;
-  while (!re_endofcount(e->curr_rune = *e->src++))
+  while (e->src < e->src_end &&
+         !re_endofcount(e->curr_rune = *e->src++))
     e->min_rep = e->min_rep * 10 + re_dec_digit(e, e->curr_rune);
   if (e->min_rep >= SLRE_MAX_REP) re_ex_num_overfl(e);
 
@@ -9422,7 +9424,8 @@ static enum slre_opcode re_countrep(struct slre_env *e) {
     return L_COUNT;
   }
   e->max_rep = 0;
-  while ((e->curr_rune = *e->src++) != '}')
+  while (e->src < e->src_end &&
+         (e->curr_rune = *e->src++) != '}')
     e->max_rep = e->max_rep * 10 + re_dec_digit(e, e->curr_rune);
   if (!e->max_rep) {
     e->max_rep = SLRE_MAX_REP;
@@ -10185,7 +10188,10 @@ int slre_compile(const char *pat, size_t pat_len, const char *flags,
   e.pstart = e.pend =
       (struct slre_node *)SLRE_MALLOC(sizeof(struct slre_node) * pat_len * 2);
   e.prog->flags = 0;
-  if (is_regex) e.prog->flags = SLRE_FLAG_RE;
+  if (is_regex) {
+    e.prog->flags = SLRE_FLAG_RE;
+    e.is_regex = 1;
+  }
 
   if ((err_code = setjmp(e.jmp_buf)) != SLRE_OK) {
     SLRE_FREE(e.pstart);
@@ -11593,7 +11599,7 @@ static int d_parsedatestr(const char *jstr, size_t len, struct timeparts *tp,
     const char *frmString = " %*s%n %03s %02d %d %02d:%02d:%02d %03s%d";
     res = sscanf(str, frmString, &dowlen, month, &tp->day, &tp->year,
                  &tp->hour, &tp->min, &tp->sec, gmt, tz);
-    if (dowlen == 3 && (res == 3 || (res >= 6 && res <= 8))) {
+    if ((res == 3 || (res >= 6 && res <= 8)) && dowlen == 3) {
       if ((tp->month = d_getnumbyname(mon_name,
                                       ARRAY_SIZE(mon_name), month)) != -1) {
         if (res == 7 && strncmp(gmt, "GMT", 3) == 0) {
@@ -12238,14 +12244,13 @@ static val_t Function_ctor(struct v7 *v7, val_t this_obj, val_t args) {
 
 static val_t Function_length(struct v7 *v7, val_t this_obj, val_t args) {
   struct v7_function *func = v7_to_function(this_obj);
-  ast_off_t body, start, pos = func->ast_off;
+  ast_off_t body, pos = func->ast_off;
   struct ast *a = func->ast;
   int argn = 0;
 
   (void) args;
 
   V7_CHECK(v7, ast_fetch_tag(a, &pos) == AST_FUNC);
-  start = pos - 1;
   body = ast_get_skip(a, pos, AST_FUNC_BODY_SKIP);
 
   ast_move_to_children(a, &pos);
