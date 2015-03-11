@@ -11,7 +11,7 @@ V7_PRIVATE v7_val_t Std_print(struct v7 *v7, val_t this_obj, val_t args) {
 
   (void) this_obj;
   for (i = 0; i < num_args; i++) {
-    p = v7_to_json(v7, v7_array_at(v7, args, i), buf, sizeof(buf));
+    p = v7_to_json(v7, v7_array_get(v7, args, i), buf, sizeof(buf));
     printf("%s", p);
     if (p != buf) {
       free(p);
@@ -23,7 +23,7 @@ V7_PRIVATE v7_val_t Std_print(struct v7 *v7, val_t this_obj, val_t args) {
 }
 
 V7_PRIVATE val_t Std_eval(struct v7 *v7, val_t t, val_t args) {
-  val_t res = v7_create_undefined(), arg = v7_array_at(v7, args, 0);
+  val_t res = v7_create_undefined(), arg = v7_array_get(v7, args, 0);
   (void) t;
   if (arg != V7_UNDEFINED) {
     char buf[100], *p;
@@ -117,7 +117,7 @@ static void base64_decode(const unsigned char *s, int len, char *dst) {
 static val_t b64_transform(struct v7 *v7, val_t this_obj, val_t args,
                            void (func)(const unsigned char *, int, char *),
                            double mult) {
-  val_t arg0 = v7_array_at(v7, args, 0);
+  val_t arg0 = v7_array_get(v7, args, 0);
   val_t res = v7_create_undefined();
 
   (void) this_obj;
@@ -145,7 +145,7 @@ static val_t Std_base64_encode(struct v7 *v7, val_t this_obj, val_t args) {
 
 #ifndef V7_NO_FS
 static val_t Std_load(struct v7 *v7, val_t this_obj, val_t args) {
-  val_t arg0 = v7_array_at(v7, args, 0);
+  val_t arg0 = v7_array_get(v7, args, 0);
   val_t res = v7_create_undefined();
 
   (void) this_obj;
@@ -166,7 +166,7 @@ static val_t Std_load(struct v7 *v7, val_t this_obj, val_t args) {
  * File.write(fd, str) -> num_bytes_written
  */
 static val_t Std_read(struct v7 *v7, val_t this_obj, val_t args) {
-  val_t arg0 = v7_array_at(v7, args, 0);
+  val_t arg0 = v7_array_get(v7, args, 0);
   char buf[2048];
   size_t n;
 
@@ -183,8 +183,8 @@ static val_t Std_read(struct v7 *v7, val_t this_obj, val_t args) {
 }
 
 static val_t Std_write(struct v7 *v7, val_t this_obj, val_t args) {
-  val_t arg0 = v7_array_at(v7, args, 0);
-  val_t arg1 = v7_array_at(v7, args, 1);
+  val_t arg0 = v7_array_get(v7, args, 0);
+  val_t arg1 = v7_array_get(v7, args, 1);
   size_t n = 0, n2;
 
   (void) this_obj;
@@ -198,7 +198,7 @@ static val_t Std_write(struct v7 *v7, val_t this_obj, val_t args) {
 }
 
 static val_t Std_close(struct v7 *v7, val_t this_obj, val_t args) {
-  val_t arg0 = v7_array_at(v7, args, 0);
+  val_t arg0 = v7_array_get(v7, args, 0);
   (void) this_obj;
   if (v7_is_double(arg0)) {
     close((int) v7_to_double(arg0));
@@ -207,8 +207,8 @@ static val_t Std_close(struct v7 *v7, val_t this_obj, val_t args) {
 }
 
 static val_t Std_open(struct v7 *v7, val_t this_obj, val_t args) {
-  val_t arg0 = v7_array_at(v7, args, 0);
-  val_t arg1 = v7_array_at(v7, args, 1);
+  val_t arg0 = v7_array_get(v7, args, 0);
+  val_t arg1 = v7_array_get(v7, args, 1);
   val_t res = v7_create_undefined();
 
   (void) this_obj;
@@ -230,25 +230,19 @@ static void init_js_stdlib(struct v7 *v7) {
   val_t res;
 
   v7_exec(v7, &res, STRINGIFY(
-    Array.prototype.indexOf = function(a, b) {
+    Array.prototype.indexOf = function(a, x) {
+      var i; var r = -1; var b = +x;
       if (!b || b < 0) b = 0;
-      for (var i = b; i < this.length; i++) {
-        if (this[i] === a) {
-          return i;
-        }
-      }
-      return -1;
+      for (i in this) if (i >= b && (r < 0 || i < r) && this[i] === a) r = +i;
+      return r;
     };));
 
   v7_exec(v7, &res, STRINGIFY(
-    Array.prototype.lastIndexOf = function(a, b) {
-      if (!b || b < 0 || b >= this.length) b = this.length - 1;
-      for (var i = b; i >= 0; i--) {
-        if (this[i] === a) {
-          return i;
-        }
-      }
-      return -1;
+    Array.prototype.lastIndexOf = function(a, x) {
+      var i; var r = -1; var b = +x;
+      if (isNaN(b) || b < 0 || b >= this.length) b = this.length - 1;
+      for (i in this) if (i <= b && (r < 0 || i > r) && this[i] === a) r = +i;
+      return r;
     };));
 
   v7_exec(v7, &res, STRINGIFY(
@@ -277,6 +271,12 @@ static void init_js_stdlib(struct v7 *v7) {
   v7_exec(v7, &res, STRINGIFY(
     Array.prototype.shift = function() {
       return this.splice(0, 1)[0];
+    };));
+
+  v7_exec(v7, &res, STRINGIFY(
+    Function.prototype.call = function() {
+      var t = arguments.splice(0, 1)[0];
+      return this.apply(t, arguments);
     };));
 
   /* TODO(lsm): re-enable in a separate PR */
@@ -319,10 +319,10 @@ V7_PRIVATE void init_stdlib(struct v7 *v7) {
   {
     val_t file_obj = v7_create_object(v7);
     v7_set_property(v7, v7->global_object, "File", 4, 0, file_obj);
-    set_cfunc_prop(v7, file_obj, "open", Std_open);
-    set_cfunc_prop(v7, file_obj, "close", Std_close);
-    set_cfunc_prop(v7, file_obj, "read", Std_read);
-    set_cfunc_prop(v7, file_obj, "write", Std_write);
+    set_cfunc_obj_prop(v7, file_obj, "open", Std_open, 2);
+    set_cfunc_obj_prop(v7, file_obj, "close", Std_close, 1);
+    set_cfunc_obj_prop(v7, file_obj, "read", Std_read, 0);
+    set_cfunc_obj_prop(v7, file_obj, "write", Std_write, 1);
   }
 #endif
 
