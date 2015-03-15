@@ -21,15 +21,11 @@
 
 #define _POSIX_C_SOURCE 200809L
 
-#include <stddef.h>   /* For size_t */
+#include <stddef.h> /* For size_t */
 
 #define V7_VERSION "1.0"
 
-enum v7_err {
-  V7_OK,
-  V7_SYNTAX_ERROR,
-  V7_EXEC_EXCEPTION
-};
+enum v7_err { V7_OK, V7_SYNTAX_ERROR, V7_EXEC_EXCEPTION };
 
 struct v7;     /* Opaque structure. V7 engine handler. */
 struct v7_val; /* Opaque structure. Holds V7 value, which has v7_type type. */
@@ -69,6 +65,7 @@ v7_val_t v7_create_undefined(void);
 v7_val_t v7_create_string(struct v7 *v7, const char *, size_t, int);
 v7_val_t v7_create_regexp(struct v7 *, const char *, size_t, const char *,
                           size_t);
+v7_val_t v7_create_foreign(void *);
 
 int v7_is_object(v7_val_t);
 int v7_is_function(v7_val_t);
@@ -79,6 +76,7 @@ int v7_is_double(v7_val_t);
 int v7_is_null(v7_val_t);
 int v7_is_undefined(v7_val_t);
 int v7_is_regexp(v7_val_t);
+int v7_is_foreign(v7_val_t);
 
 void *v7_to_foreign(v7_val_t);
 int v7_to_boolean(v7_val_t);
@@ -5329,6 +5327,10 @@ int v7_is_regexp(val_t v) {
   return (v & V7_TAG_MASK) == V7_TAG_REGEXP;
 }
 
+int v7_is_foreign(val_t v) {
+  return (v & V7_TAG_MASK) == V7_TAG_FOREIGN;
+}
+
 V7_PRIVATE struct v7_regexp *v7_to_regexp(val_t v) {
   return (struct v7_regexp *)v7_to_pointer(v);
 }
@@ -5471,6 +5473,10 @@ v7_val_t v7_create_regexp(struct v7 *v7, const char *re, size_t re_len,
 
     return v7_pointer_to_value(rp) | V7_TAG_REGEXP;
   }
+}
+
+v7_val_t v7_create_foreign(void *p) {
+  return v7_pointer_to_value(p) | V7_TAG_FOREIGN;
 }
 
 v7_val_t v7_create_function(struct v7 *v7) {
@@ -6123,19 +6129,19 @@ v7_val_t v7_create_string(struct v7 *v7, const char *p, size_t len, int own) {
 }
 
 V7_PRIVATE val_t to_string(struct v7 *v7, val_t v) {
-  char buf[100], *p;
+  char buf[100], *p, *s;
   val_t res;
   if (v7_is_string(v)) {
     return v;
   }
 
-  p = v7_to_json(v7, i_value_of(v7, v), buf, sizeof(buf));
+  s = p = v7_to_json(v7, i_value_of(v7, v), buf, sizeof(buf));
   if (p[0] == '"') {
     p[strlen(p) - 1] = '\0';
-    p++;
+    s++;
   }
-  res = v7_create_string(v7, p, strlen(p), 1);
-  if (p != buf && p != buf + 1) {
+  res = v7_create_string(v7, s, strlen(s), 1);
+  if (p != buf) {
     free(p);
   }
 
@@ -7611,50 +7617,46 @@ V7_PRIVATE void throw_exception(struct v7 *v7, const char *type,
 } /* LCOV_EXCL_LINE */
 
 V7_PRIVATE val_t i_value_of(struct v7 *v7, val_t v) {
-  val_t f = v7_create_undefined();
-  struct gc_tmp_frame tf = new_tmp_frame(v7);
-  tmp_stack_push(&tf, &v);
-  tmp_stack_push(&tf, &f);
+  val_t f;
+  if (!v7_is_object(v)) {
+    return v;
+  }
 
-  if (v7_is_object(v) && (f = v7_get(v7, v, "valueOf", 7)) != V7_UNDEFINED) {
+  if ((f = v7_get(v7, v, "valueOf", 7)) != V7_UNDEFINED) {
+    /*
+     * v7_apply will root all parameters since it can be called
+     * from user code, hence it's not necessary to root `f`.
+     * This assumes all callers of i_value_of will root their
+     * temporary values.
+     */
     v = v7_apply(v7, f, v, v7_create_array(v7));
   }
-  tmp_frame_cleanup(&tf);
   return v;
 }
 
+/* i_as_num expects callers to root temporary values passed as args */
 V7_PRIVATE double i_as_num(struct v7 *v7, val_t v) {
   double res = 0.0;
-  struct gc_tmp_frame tf = new_tmp_frame(v7);
-  tmp_stack_push(&tf, &v);
 
   v = i_value_of(v7, v);
-  if (!v7_is_double(v) && !v7_is_boolean(v)) {
-    if (v7_is_string(v)) {
-      size_t n;
-      char buf[20], *e, *s = (char *)v7_to_string(v7, &v, &n);
-      if (n != 0) {
-        snprintf(buf, sizeof(buf), "%.*s", (int)n, s);
-        buf[sizeof(buf) - 1] = '\0';
-        res = strtod(buf, &e);
-        if (e - n != buf) {
-          res = NAN;
-        }
+  if (v7_is_double(v)) {
+    res = v7_to_double(v);
+  } else if (v7_is_string(v)) {
+    size_t n;
+    char *e, *s = (char *)v7_to_string(v7, &v, &n);
+    if (n != 0) {
+      res = strtod(s, &e);
+      if (e - n != s) {
+        res = NAN;
       }
-    } else if (v7_is_null(v)) {
-      res = 0.0;
-    } else {
-      res = NAN;
     }
+  } else if (v7_is_boolean(v)) {
+    res = (double)v7_to_boolean(v);
+  } else if (v7_is_null(v)) {
+    res = 0.0;
   } else {
-    if (v7_is_boolean(v)) {
-      res = (double)v7_to_boolean(v);
-    } else {
-      res = v7_to_double(v);
-    }
+    res = NAN;
   }
-
-  tmp_frame_cleanup(&tf);
   return res;
 }
 
@@ -7725,8 +7727,7 @@ static double i_num_bin_op(struct v7 *v7, enum ast_tag tag, double a,
     case AST_OR:
     case AST_XOR:
     case AST_AND:
-      return i_int_bin_op(v7, tag, isnan(a) || isinf(a) ? 0.0 : a,
-                          isnan(b) || isinf(b) ? 0.0 : b);
+      return i_int_bin_op(v7, tag, a, b);
     default:
       throw_exception(v7, "InternalError", "%s", __func__); /* LCOV_EXCL_LINE */
       return 0;                                             /* LCOV_EXCL_LINE */

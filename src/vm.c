@@ -85,6 +85,10 @@ int v7_is_regexp(val_t v) {
   return (v & V7_TAG_MASK) == V7_TAG_REGEXP;
 }
 
+int v7_is_foreign(val_t v) {
+  return (v & V7_TAG_MASK) == V7_TAG_FOREIGN;
+}
+
 V7_PRIVATE struct v7_regexp *v7_to_regexp(val_t v) {
   return (struct v7_regexp *)v7_to_pointer(v);
 }
@@ -227,6 +231,10 @@ v7_val_t v7_create_regexp(struct v7 *v7, const char *re, size_t re_len,
 
     return v7_pointer_to_value(rp) | V7_TAG_REGEXP;
   }
+}
+
+v7_val_t v7_create_foreign(void *p) {
+  return v7_pointer_to_value(p) | V7_TAG_FOREIGN;
 }
 
 v7_val_t v7_create_function(struct v7 *v7) {
@@ -879,19 +887,19 @@ v7_val_t v7_create_string(struct v7 *v7, const char *p, size_t len, int own) {
 }
 
 V7_PRIVATE val_t to_string(struct v7 *v7, val_t v) {
-  char buf[100], *p;
+  char buf[100], *p, *s;
   val_t res;
   if (v7_is_string(v)) {
     return v;
   }
 
-  p = v7_to_json(v7, i_value_of(v7, v), buf, sizeof(buf));
+  s = p = v7_to_json(v7, i_value_of(v7, v), buf, sizeof(buf));
   if (p[0] == '"') {
     p[strlen(p) - 1] = '\0';
-    p++;
+    s++;
   }
-  res = v7_create_string(v7, p, strlen(p), 1);
-  if (p != buf && p != buf + 1) {
+  res = v7_create_string(v7, s, strlen(s), 1);
+  if (p != buf) {
     free(p);
   }
 
