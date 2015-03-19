@@ -171,6 +171,16 @@ enum cached_strings {
   PREDEFINED_STR_MAX
 };
 
+enum error_ctor {
+  TYPE_ERROR,
+  SYNTAX_ERROR,
+  REFERENCE_ERROR,
+  INTERNAL_ERROR,
+  RANGE_ERROR,
+
+  ERROR_CTOR_MAX
+};
+
 #include "vm.h"
 
 struct v7 {
@@ -210,6 +220,8 @@ struct v7 {
 
   int strict_mode; /* true if currently in strict mode */
 
+  val_t error_objects[ERROR_CTOR_MAX];
+
   val_t thrown_error;
   char error_msg[60];     /* Exception message */
   int creating_exception; /* Avoids reentrant exception creation */
@@ -239,9 +251,6 @@ struct v7 {
   struct mbuf allocated_asts;
 
   val_t predefined_strings[PREDEFINED_STR_MAX];
-
-  /* TODO(mkm): remove when finishing debugging compacting GC */
-  val_t number_object;
 };
 
 #ifndef ARRAY_SIZE
@@ -251,11 +260,11 @@ struct v7 {
 #define V7_STATIC_ASSERT(COND, MSG) \
   typedef char static_assertion_##MSG[2 * (!!(COND)) - 1]
 
-#define V7_CHECK(v7, COND)                                             \
-  do {                                                                 \
-    if (!(COND))                                                       \
-      throw_exception(v7, "InternalError", "%s line %d: %s", __func__, \
-                      __LINE__, #COND);                                \
+#define V7_CHECK(v7, COND)                                            \
+  do {                                                                \
+    if (!(COND))                                                      \
+      throw_exception(v7, INTERNAL_ERROR, "%s line %d: %s", __func__, \
+                      __LINE__, #COND);                               \
   } while (0)
 
 #define TRACE_VAL(v7, val)                                     \
@@ -270,7 +279,8 @@ extern "C" {
 #endif /* __cplusplus */
 
 V7_PRIVATE void throw_value(struct v7 *, val_t);
-V7_PRIVATE void throw_exception(struct v7 *, const char *, const char *, ...);
+V7_PRIVATE void throw_exception(struct v7 *, enum error_ctor, const char *,
+                                ...);
 V7_PRIVATE size_t unescape(const char *s, size_t len, char *to);
 
 V7_PRIVATE void init_js_stdlib(struct v7 *);

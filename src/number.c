@@ -48,7 +48,7 @@ static val_t Number_valueOf(struct v7 *v7, val_t this_obj, val_t args) {
       (v7_is_object(this_obj) &&
        v7_object_to_value(v7_to_object(this_obj)->prototype) !=
            v7->number_prototype)) {
-    throw_exception(v7, "TypeError",
+    throw_exception(v7, TYPE_ERROR,
                     "Number.valueOf called on non-number object");
   }
   return Obj_valueOf(v7, this_obj, args);
@@ -65,7 +65,7 @@ static val_t Number_toString(struct v7 *v7, val_t this_obj, val_t args) {
   if (!v7_is_double(this_obj) &&
       !(v7_is_object(this_obj) &&
         is_prototype_of(v7, this_obj, v7->number_prototype))) {
-    throw_exception(v7, "TypeError",
+    throw_exception(v7, TYPE_ERROR,
                     "Number.toString called on non-number object");
   }
 
@@ -87,7 +87,6 @@ V7_PRIVATE void init_number(struct v7 *v7) {
       v7_create_cfunction_ctor(v7, v7->number_prototype, Number_ctor, 1);
   v7_set_property(v7, v7->global_object, "Number", 6, V7_PROPERTY_DONT_ENUM,
                   num);
-  v7->number_object = num;
 
   set_cfunc_prop(v7, v7->number_prototype, "toFixed", Number_toFixed);
   set_cfunc_prop(v7, v7->number_prototype, "toPrecision", Number_toPrecision);

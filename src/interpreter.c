@@ -31,27 +31,29 @@ V7_PRIVATE void throw_value(struct v7 *v7, val_t v) {
   siglongjmp(v7->jmp_buf, THROW_JMP);
 } /* LCOV_EXCL_LINE */
 
-static val_t create_exception(struct v7 *v7, const char *ex, const char *msg) {
-  char buf[40];
-  val_t e;
+static val_t create_exception(struct v7 *v7, enum error_ctor ex,
+                              const char *msg) {
+  val_t e, args;
   if (v7->creating_exception) {
-    fprintf(stderr, "Exception creation throws an exception %s: %s\n", ex, msg);
+    fprintf(stderr, "Exception creation throws an exception %d: %s\n", ex, msg);
     return V7_UNDEFINED;
   }
-  snprintf(buf, sizeof(buf), "new %s(this)", ex);
+  args = v7_create_array(v7);
+  v7_array_set(v7, args, 0, v7_create_string(v7, msg, strlen(msg), 1));
   v7->creating_exception++;
-  v7_exec_with(v7, &e, buf, v7_create_string(v7, msg, strlen(msg), 1));
+  e = create_object(v7, v7_get(v7, v7->error_objects[ex], "prototype", 9));
+  v7_apply(v7, v7->error_objects[ex], e, args);
   v7->creating_exception--;
   return e;
 }
 
-V7_PRIVATE void throw_exception(struct v7 *v7, const char *type,
+V7_PRIVATE void throw_exception(struct v7 *v7, enum error_ctor ex,
                                 const char *err_fmt, ...) {
   va_list ap;
   va_start(ap, err_fmt);
   vsnprintf(v7->error_msg, sizeof(v7->error_msg), err_fmt, ap);
   va_end(ap);
-  throw_value(v7, create_exception(v7, type, v7->error_msg));
+  throw_value(v7, create_exception(v7, ex, v7->error_msg));
 } /* LCOV_EXCL_LINE */
 
 V7_PRIVATE val_t i_value_of(struct v7 *v7, val_t v) {
@@ -105,8 +107,8 @@ static double i_num_unary_op(struct v7 *v7, enum ast_tag tag, double a) {
     case AST_NEGATIVE:
       return -a;
     default:
-      throw_exception(v7, "InternalError", "%s", __func__); /* LCOV_EXCL_LINE */
-      return 0;                                             /* LCOV_EXCL_LINE */
+      throw_exception(v7, INTERNAL_ERROR, "%s", __func__); /* LCOV_EXCL_LINE */
+      return 0;                                            /* LCOV_EXCL_LINE */
   }
 }
 
@@ -129,8 +131,8 @@ static double i_int_bin_op(struct v7 *v7, enum ast_tag tag, double a,
     case AST_AND:
       return ia & ib;
     default:
-      throw_exception(v7, "InternalError", "%s", __func__); /* LCOV_EXCL_LINE */
-      return 0;                                             /* LCOV_EXCL_LINE */
+      throw_exception(v7, INTERNAL_ERROR, "%s", __func__); /* LCOV_EXCL_LINE */
+      return 0;                                            /* LCOV_EXCL_LINE */
   }
 }
 
@@ -167,8 +169,8 @@ static double i_num_bin_op(struct v7 *v7, enum ast_tag tag, double a,
     case AST_AND:
       return i_int_bin_op(v7, tag, a, b);
     default:
-      throw_exception(v7, "InternalError", "%s", __func__); /* LCOV_EXCL_LINE */
-      return 0;                                             /* LCOV_EXCL_LINE */
+      throw_exception(v7, INTERNAL_ERROR, "%s", __func__); /* LCOV_EXCL_LINE */
+      return 0;                                            /* LCOV_EXCL_LINE */
   }
 }
 
@@ -189,8 +191,8 @@ static int i_bool_bin_op(struct v7 *v7, enum ast_tag tag, double a, double b) {
     case AST_GE:
       return a >= b;
     default:
-      throw_exception(v7, "InternalError", "%s", __func__); /* LCOV_EXCL_LINE */
-      return 0;                                             /* LCOV_EXCL_LINE */
+      throw_exception(v7, INTERNAL_ERROR, "%s", __func__); /* LCOV_EXCL_LINE */
+      return 0;                                            /* LCOV_EXCL_LINE */
   }
 }
 
@@ -319,7 +321,7 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
             res = v7_create_boolean(cmp >= 0);
             break;
           default:
-            throw_exception(v7, "InternalError", "Unhandled op");
+            throw_exception(v7, INTERNAL_ERROR, "Unhandled op");
         }
       } else {
         res = v7_create_boolean(
@@ -396,7 +398,7 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
           name = buf;
           break;
         default:
-          throw_exception(v7, "ReferenceError",
+          throw_exception(v7, REFERENCE_ERROR,
                           "Invalid left-hand side in assignment");
           /* unreacheable */
           return v7_create_undefined(); /* LCOV_EXCL_LINE */
@@ -516,7 +518,7 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
             if (v7->strict_mode &&
                 v7_get_own_property(v7, res, name, name_len) != NULL) {
               /* Ideally this should be thrown at parse time */
-              throw_exception(v7, "SyntaxError",
+              throw_exception(v7, SYNTAX_ERROR,
                               "duplicate data property in object literal "
                               "not allowed in strict mode");
             }
@@ -549,7 +551,7 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
             break;
           }
           default:
-            throw_exception(v7, "InternalError",
+            throw_exception(v7, INTERNAL_ERROR,
                             "Expecting AST_(PROP|GETTER|SETTER) got %d", tag);
         }
       }
@@ -590,7 +592,7 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
       name = ast_get_inlined_data(a, *pos, &name_len);
       ast_move_to_children(a, pos);
       if ((p = v7_get_property(v7, scope, name, name_len)) == NULL) {
-        throw_exception(v7, "ReferenceError", "[%.*s] is not defined",
+        throw_exception(v7, REFERENCE_ERROR, "[%.*s] is not defined",
                         (int) name_len, name);
       }
       res = v7_property_value(v7, scope, p);
@@ -730,7 +732,7 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
             lval = root;
           }
           if (v7->strict_mode) {
-            throw_exception(v7, "SyntaxError", "Delete in strict");
+            throw_exception(v7, SYNTAX_ERROR, "Delete in strict");
           }
           break;
         case AST_MEMBER:
@@ -765,7 +767,7 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
       v1 = i_eval_expr(v7, a, pos, scope);
       v2 = i_eval_expr(v7, a, pos, scope);
       if (!v7_is_function(v2) && !v7_is_cfunction(i_value_of(v7, v2))) {
-        throw_exception(v7, "TypeError",
+        throw_exception(v7, TYPE_ERROR,
                         "Expecting a function in instanceof check");
       }
       res = v7_create_boolean(
@@ -776,7 +778,7 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
       res = v7_create_undefined();
       break;
     default:
-      throw_exception(v7, "InternalError", "%s: %s", __func__,
+      throw_exception(v7, INTERNAL_ERROR, "%s: %s", __func__,
                       def->name); /* LCOV_EXCL_LINE */
       /* unreacheable */
       break;
@@ -900,7 +902,7 @@ static val_t i_eval_call(struct v7 *v7, struct ast *a, ast_off_t *pos,
   ast_off_t end, fpos, fend, fbody;
   val_t frame = v7_create_undefined(), res = v7_create_undefined();
   val_t v1 = v7_create_undefined(), args = v7_create_undefined();
-  val_t old_this = v7->this_object;
+  val_t cfunc = v7_create_undefined(), old_this = v7->this_object;
   struct v7_function *func;
   enum ast_tag tag;
   char *name;
@@ -917,38 +919,29 @@ static val_t i_eval_call(struct v7 *v7, struct ast *a, ast_off_t *pos,
 
   end = ast_get_skip(a, *pos, AST_END_SKIP);
   ast_move_to_children(a, pos);
-  v1 = i_eval_expr(v7, a, pos, scope);
+  cfunc = v1 = i_eval_expr(v7, a, pos, scope);
   if (!v7_is_cfunction(v1) && !v7_is_function(v1)) {
-    v1 = i_value_of(v7, v1);
-  }
-
-  if (v7_is_cfunction(v1)) {
-    args = v7_create_array(v7);
-    for (i = 0; *pos < end; i++) {
-      res = i_eval_expr(v7, a, pos, scope);
-      n = snprintf(buf, sizeof(buf), "%d", i);
-      v7_set_property(v7, args, buf, n, 0, res);
+    /* extract the hidden property from a cfunction_object */
+    struct v7_property *p;
+    p = v7_get_own_property2(v7, v1, "", 0, V7_PROPERTY_HIDDEN);
+    if (p != NULL) {
+      cfunc = p->value;
     }
-    res = v7_to_cfunction(v1)(v7, this_object, args);
-    goto cleanup;
-  }
-  if (!v7_is_function(v1)) {
-    throw_exception(v7, "TypeError", "%s",
-                    "value is not a function"); /* LCOV_EXCL_LINE */
   }
 
-  func = v7_to_function(v1);
   if (is_constructor) {
-    val_t fun_proto = v7_get(v7, v1, "prototype", 9);
-    tmp_stack_push(&tf, &fun_proto);
-    if (!v7_is_object(fun_proto)) {
-      /* TODO(mkm): box primitive value */
-      throw_exception(v7, "TypeError",
-                      "Cannot set a primitive value as object prototype");
+    if (!v7_is_cfunction(v1)) {
+      val_t fun_proto = v7_get(v7, v1, "prototype", 9);
+      tmp_stack_push(&tf, &fun_proto);
+      if (!v7_is_object(fun_proto)) {
+        /* TODO(mkm): box primitive value */
+        throw_exception(v7, TYPE_ERROR,
+                        "Cannot set a primitive value as object prototype");
+      }
+      v7_to_object(this_object)->prototype = v7_to_object(fun_proto);
     }
-    v7_to_object(this_object)->prototype = v7_to_object(fun_proto);
-  } else if (v7_is_undefined(this_object) &&
-             !(func->attributes & V7_FUNCTION_STRICT)) {
+  } else if (v7_is_undefined(this_object) && v7_is_function(v1) &&
+             !(v7_to_function(v1)->attributes & V7_FUNCTION_STRICT)) {
     /*
      * null and undefined are replaced with `global` in non-strict mode,
      * as per ECMA-262 6th, 19.2.3.3.
@@ -956,6 +949,22 @@ static val_t i_eval_call(struct v7 *v7, struct ast *a, ast_off_t *pos,
     this_object = v7->global_object;
   }
 
+  if (v7_is_cfunction(cfunc)) {
+    args = v7_create_array(v7);
+    for (i = 0; *pos < end; i++) {
+      res = i_eval_expr(v7, a, pos, scope);
+      n = snprintf(buf, sizeof(buf), "%d", i);
+      v7_set_property(v7, args, buf, n, 0, res);
+    }
+    res = v7_to_cfunction(cfunc)(v7, this_object, args);
+    goto cleanup;
+  }
+  if (!v7_is_function(v1)) {
+    throw_exception(v7, TYPE_ERROR, "%s",
+                    "value is not a function"); /* LCOV_EXCL_LINE */
+  }
+
+  func = v7_to_function(v1);
   frame = i_prepare_call(v7, func, &fpos, &fbody, &fend);
 
   /*
@@ -1245,7 +1254,7 @@ static val_t i_eval_stmt(struct v7 *v7, struct ast *a, ast_off_t *pos,
       while (*pos < end) {
         switch (case_tag = ast_fetch_tag(a, pos)) {
           default:
-            throw_exception(v7, "InternalError", /* LCOV_EXCL_LINE */
+            throw_exception(v7, INTERNAL_ERROR, /* LCOV_EXCL_LINE */
                             "invalid ast node %d", case_tag);
           case AST_DEFAULT:
             default_pos = *pos;
@@ -1371,7 +1380,7 @@ static val_t i_eval_stmt(struct v7 *v7, struct ast *a, ast_off_t *pos,
        */
       with_scope = i_eval_expr(v7, a, pos, scope);
       if (!v7_is_object(with_scope)) {
-        throw_exception(v7, "InternalError",
+        throw_exception(v7, INTERNAL_ERROR,
                         "with statement is not really implemented yet");
       }
       i_eval_stmts(v7, a, pos, end, with_scope, brk);
@@ -1440,12 +1449,21 @@ val_t v7_apply(struct v7 *v7, val_t f, val_t this_object, val_t args) {
   tmp_stack_push(&vf, &f);
   tmp_stack_push(&vf, &this_object);
 
+  if (!v7_is_cfunction(f) && !v7_is_function(f)) {
+    /* extract the hidden property from a cfunction_object */
+    struct v7_property *p;
+    p = v7_get_own_property2(v7, f, "", 0, V7_PROPERTY_HIDDEN);
+    if (p != NULL) {
+      f = p->value;
+    }
+  }
+
   if (v7_is_cfunction(f)) {
     res = v7_to_cfunction(f)(v7, this_object, args);
     goto cleanup;
   }
   if (!v7_is_function(f)) {
-    throw_exception(v7, "TypeError", "value is not a function");
+    throw_exception(v7, TYPE_ERROR, "value is not a function");
   }
   func = v7_to_function(f);
   frame = i_prepare_call(v7, func, &pos, &body, &end);
@@ -1546,11 +1564,11 @@ enum v7_err v7_exec_file(struct v7 *v7, val_t *res, const char *path) {
   if ((fp = fopen(path, "r")) == NULL) {
     snprintf(v7->error_msg, sizeof(v7->error_msg), "cannot open file [%s]",
              path);
-    *res = create_exception(v7, "Error", v7->error_msg);
+    *res = create_exception(v7, SYNTAX_ERROR, v7->error_msg);
   } else if (fseek(fp, 0, SEEK_END) != 0 || (file_size = ftell(fp)) <= 0) {
     snprintf(v7->error_msg, sizeof(v7->error_msg), "fseek(%s): %s", path,
              strerror(errno));
-    *res = create_exception(v7, "Error", v7->error_msg);
+    *res = create_exception(v7, SYNTAX_ERROR, v7->error_msg);
     fclose(fp);
   } else if ((p = (char *) calloc(1, (size_t) file_size + 1)) == NULL) {
     snprintf(v7->error_msg, sizeof(v7->error_msg), "cannot allocate %ld bytes",

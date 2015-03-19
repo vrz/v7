@@ -779,6 +779,16 @@ enum cached_strings {
   PREDEFINED_STR_MAX
 };
 
+enum error_ctor {
+  TYPE_ERROR,
+  SYNTAX_ERROR,
+  REFERENCE_ERROR,
+  INTERNAL_ERROR,
+  RANGE_ERROR,
+
+  ERROR_CTOR_MAX
+};
+
 
 struct v7 {
   val_t global_object;
@@ -817,6 +827,8 @@ struct v7 {
 
   int strict_mode; /* true if currently in strict mode */
 
+  val_t error_objects[ERROR_CTOR_MAX];
+
   val_t thrown_error;
   char error_msg[60];     /* Exception message */
   int creating_exception; /* Avoids reentrant exception creation */
@@ -846,9 +858,6 @@ struct v7 {
   struct mbuf allocated_asts;
 
   val_t predefined_strings[PREDEFINED_STR_MAX];
-
-  /* TODO(mkm): remove when finishing debugging compacting GC */
-  val_t number_object;
 };
 
 #ifndef ARRAY_SIZE
@@ -858,11 +867,11 @@ struct v7 {
 #define V7_STATIC_ASSERT(COND, MSG) \
   typedef char static_assertion_##MSG[2 * (!!(COND)) - 1]
 
-#define V7_CHECK(v7, COND)                                             \
-  do {                                                                 \
-    if (!(COND))                                                       \
-      throw_exception(v7, "InternalError", "%s line %d: %s", __func__, \
-                      __LINE__, #COND);                                \
+#define V7_CHECK(v7, COND)                                            \
+  do {                                                                \
+    if (!(COND))                                                      \
+      throw_exception(v7, INTERNAL_ERROR, "%s line %d: %s", __func__, \
+                      __LINE__, #COND);                               \
   } while (0)
 
 #define TRACE_VAL(v7, val)                                     \
@@ -877,7 +886,8 @@ extern "C" {
 #endif /* __cplusplus */
 
 V7_PRIVATE void throw_value(struct v7 *, val_t);
-V7_PRIVATE void throw_exception(struct v7 *, const char *, const char *, ...);
+V7_PRIVATE void throw_exception(struct v7 *, enum error_ctor, const char *,
+                                ...);
 V7_PRIVATE size_t unescape(const char *s, size_t len, char *to);
 
 V7_PRIVATE void init_js_stdlib(struct v7 *);
@@ -3469,11 +3479,11 @@ static val_t Array_set_length(struct v7 *v7, val_t this_obj, val_t args) {
   long new_len = arg_long(v7, args, 0, -1);
 
   if (!v7_is_object(this_obj)) {
-    throw_exception(v7, "TypeError", "Array expected");
+    throw_exception(v7, TYPE_ERROR, "Array expected");
   } else if (new_len < 0 ||
              (v7_is_double(arg0) &&
               (isnan(v7_to_double(arg0)) || isinf(v7_to_double(arg0))))) {
-    throw_exception(v7, "RangeError", "Invalid array length");
+    throw_exception(v7, RANGE_ERROR, "Invalid array length");
   } else {
     struct v7_property **p, **next;
     long index, max_index = -1;
@@ -3736,7 +3746,7 @@ static val_t Array_map(struct v7 *v7, val_t this_obj, val_t args) {
   struct v7_property *p;
 
   if (!v7_is_object(this_obj)) {
-    throw_exception(v7, "TypeError", "Array expected");
+    throw_exception(v7, TYPE_ERROR, "Array expected");
   } else {
     a_prep1(v7, this_obj, args, &arg0, &arg1);
     res = v7_create_array(v7);
@@ -3757,7 +3767,7 @@ static val_t Array_every(struct v7 *v7, val_t this_obj, val_t args) {
   struct v7_property *p;
 
   if (!v7_is_object(this_obj)) {
-    throw_exception(v7, "TypeError", "Array expected");
+    throw_exception(v7, TYPE_ERROR, "Array expected");
   } else {
     a_prep1(v7, this_obj, args, &arg0, &arg1);
     res = v7_create_boolean(1);
@@ -3778,7 +3788,7 @@ static val_t Array_some(struct v7 *v7, val_t this_obj, val_t args) {
   struct v7_property *p;
 
   if (!v7_is_object(this_obj)) {
-    throw_exception(v7, "TypeError", "Array expected");
+    throw_exception(v7, TYPE_ERROR, "Array expected");
   } else {
     a_prep1(v7, this_obj, args, &arg0, &arg1);
     res = v7_create_boolean(0);
@@ -3799,7 +3809,7 @@ static val_t Array_filter(struct v7 *v7, val_t this_obj, val_t args) {
   struct v7_property *p;
 
   if (!v7_is_object(this_obj)) {
-    throw_exception(v7, "TypeError", "Array expected");
+    throw_exception(v7, TYPE_ERROR, "Array expected");
   } else {
     a_prep1(v7, this_obj, args, &arg0, &arg1);
     res = v7_create_array(v7);
@@ -3866,7 +3876,7 @@ static val_t Boolean_valueOf(struct v7 *v7, val_t this_obj, val_t args) {
       (v7_is_object(this_obj) &&
        v7_object_to_value(v7_to_object(this_obj)->prototype) !=
            v7->boolean_prototype)) {
-    throw_exception(v7, "TypeError",
+    throw_exception(v7, TYPE_ERROR,
                     "Boolean.valueOf called on non-boolean object");
   }
   return Obj_valueOf(v7, this_obj, args);
@@ -3883,7 +3893,7 @@ static val_t Boolean_toString(struct v7 *v7, val_t this_obj, val_t args) {
   if (!v7_is_boolean(this_obj) &&
       !(v7_is_object(this_obj) &&
         is_prototype_of(v7, this_obj, v7->boolean_prototype))) {
-    throw_exception(v7, "TypeError",
+    throw_exception(v7, TYPE_ERROR,
                     "Boolean.toString called on non-boolean object");
   }
 
@@ -4160,7 +4170,7 @@ static val_t Str_valueOf(struct v7 *v7, val_t this_obj, val_t args) {
       (v7_is_object(this_obj) &&
        v7_object_to_value(v7_to_object(this_obj)->prototype) !=
            v7->string_prototype)) {
-    throw_exception(v7, "TypeError",
+    throw_exception(v7, TYPE_ERROR,
                     "String.valueOf called on non-string object");
   }
   return Obj_valueOf(v7, this_obj, args);
@@ -4190,7 +4200,7 @@ static val_t Str_toString(struct v7 *v7, val_t this_obj, val_t args) {
   if (!v7_is_string(this_obj) &&
       !(v7_is_object(this_obj) &&
         is_prototype_of(v7, this_obj, v7->string_prototype))) {
-    throw_exception(v7, "TypeError",
+    throw_exception(v7, TYPE_ERROR,
                     "String.toString called on non-string object");
   }
 
@@ -4211,7 +4221,7 @@ static val_t Str_match(struct v7 *v7, val_t this_obj, val_t args) {
       s = v7_to_string(v7, &so, &s_len);
       if (slre_compile(s, s_len, NULL, 0, &prog, 0) != SLRE_OK ||
           prog == NULL) {
-        throw_exception(v7, "TypeError", "Invalid String");
+        throw_exception(v7, TYPE_ERROR, "Invalid String");
         return v7_create_undefined();
       }
     } else
@@ -4267,7 +4277,7 @@ static val_t Str_replace(struct v7 *v7, val_t this_obj, val_t args) {
       str = v7_to_string(v7, &ro, &str_len);
       if (slre_compile(str, str_len, NULL, 0, &prog, 0) != SLRE_OK ||
           prog == NULL) {
-        throw_exception(v7, "TypeError", "Invalid String");
+        throw_exception(v7, TYPE_ERROR, "Invalid String");
         return v7_create_undefined();
       }
     } else {
@@ -4361,7 +4371,7 @@ static val_t Str_search(struct v7 *v7, val_t this_obj, val_t args) {
       s = v7_to_string(v7, &so, &s_len);
       if (slre_compile(s, s_len, NULL, 0, &prog, 0) != SLRE_OK ||
           prog == NULL) {
-        throw_exception(v7, "TypeError", "Invalid String");
+        throw_exception(v7, TYPE_ERROR, "Invalid String");
         return v7_create_undefined();
       }
     } else
@@ -4556,7 +4566,7 @@ static val_t Str_split(struct v7 *v7, val_t this_obj, val_t args) {
       str = v7_to_string(v7, &ro, &str_len);
       if (slre_compile(str, str_len, NULL, 0, &prog, 0) != SLRE_OK ||
           prog == NULL) {
-        throw_exception(v7, "TypeError", "Invalid String");
+        throw_exception(v7, TYPE_ERROR, "Invalid String");
         return v7_create_undefined();
       }
     } else {
@@ -5469,7 +5479,7 @@ v7_val_t v7_create_regexp(struct v7 *v7, const char *re, size_t re_len,
 
   if (slre_compile(re, re_len, flags, flags_len, &p, 1) != SLRE_OK ||
       p == NULL) {
-    throw_exception(v7, "TypeError", "Invalid regex");
+    throw_exception(v7, TYPE_ERROR, "Invalid regex");
     return V7_UNDEFINED;
   } else {
     rp = (struct v7_regexp *) malloc(sizeof(*rp));
@@ -5827,7 +5837,7 @@ v7_val_t v7_get(struct v7 *v7, val_t obj, const char *name, size_t name_len) {
   } else if (v7_is_boolean(obj)) {
     v = v7->boolean_prototype;
   } else if (v7_is_undefined(obj)) {
-    throw_exception(v7, "TypeError", "cannot read property '%.*s' of undefined",
+    throw_exception(v7, TYPE_ERROR, "cannot read property '%.*s' of undefined",
                     (int) name_len, name);
   } else if (v7_is_cfunction(obj)) {
     return V7_UNDEFINED;
@@ -5880,7 +5890,7 @@ int v7_set_property_v(struct v7 *v7, val_t obj, val_t name,
 
   if (v7_to_object(obj)->attributes & V7_OBJ_NOT_EXTENSIBLE) {
     if (v7->strict_mode) {
-      throw_exception(v7, "TypeError", "Object is not extensible");
+      throw_exception(v7, TYPE_ERROR, "Object is not extensible");
     }
     return -1;
   }
@@ -6448,7 +6458,7 @@ V7_PRIVATE void gc_arena_grow(struct gc_arena *a, size_t new_size) {
 V7_PRIVATE void *gc_alloc_cell(struct v7 *v7, struct gc_arena *a) {
 #ifdef V7_DISABLE_GC
   (void) v7;
-  return malloc(a->cell_size);
+  return calloc(1, a->cell_size);
 #else
   char **r;
   if (a->free == NULL) {
@@ -6474,6 +6484,11 @@ V7_PRIVATE void *gc_alloc_cell(struct v7 *v7, struct gc_arena *a) {
   a->allocations++;
   a->alive++;
 
+  /*
+   * TODO(mkm): minor opt possible since most of the fields
+   * are overwritten downstream, but not worth the yak shave time
+   * when fields are added to GC-able structures */
+  memset(r, 0, a->cell_size);
   return (void *) r;
 #endif
 }
@@ -6683,13 +6698,6 @@ void v7_gc(struct v7 *v7) {
   gc_dump_arena_stats("Before GC functions", &v7->function_arena);
   gc_dump_arena_stats("Before GC properties", &v7->property_arena);
 
-#if 0
-#ifdef V7_ENABLE_COMPACTING_GC
-  printf("DUMP BEFORE\n");
-  gc_dump_owned_strings(v7);
-#endif
-#endif
-
   /* TODO(mkm): paranoia? */
   gc_mark(v7, v7->object_prototype);
   gc_mark(v7, v7->array_prototype);
@@ -6711,15 +6719,7 @@ void v7_gc(struct v7 *v7) {
   }
 
 #ifdef V7_ENABLE_COMPACTING_GC
-#if 0
-  printf("Owned string mbuf len was %lu\n", v7->owned_strings.len);
-#endif
   gc_compact_strings(v7);
-#if 0
-  printf("DUMP AFTER\n");
-  gc_dump_owned_strings(v7);
-  printf("Owned string mbuf len is %lu\n", v7->owned_strings.len);
-#endif
 #endif
 
   gc_sweep(&v7->object_arena, 0);
@@ -7621,27 +7621,29 @@ V7_PRIVATE void throw_value(struct v7 *v7, val_t v) {
   siglongjmp(v7->jmp_buf, THROW_JMP);
 } /* LCOV_EXCL_LINE */
 
-static val_t create_exception(struct v7 *v7, const char *ex, const char *msg) {
-  char buf[40];
-  val_t e;
+static val_t create_exception(struct v7 *v7, enum error_ctor ex,
+                              const char *msg) {
+  val_t e, args;
   if (v7->creating_exception) {
-    fprintf(stderr, "Exception creation throws an exception %s: %s\n", ex, msg);
+    fprintf(stderr, "Exception creation throws an exception %d: %s\n", ex, msg);
     return V7_UNDEFINED;
   }
-  snprintf(buf, sizeof(buf), "new %s(this)", ex);
+  args = v7_create_array(v7);
+  v7_array_set(v7, args, 0, v7_create_string(v7, msg, strlen(msg), 1));
   v7->creating_exception++;
-  v7_exec_with(v7, &e, buf, v7_create_string(v7, msg, strlen(msg), 1));
+  e = create_object(v7, v7_get(v7, v7->error_objects[ex], "prototype", 9));
+  v7_apply(v7, v7->error_objects[ex], e, args);
   v7->creating_exception--;
   return e;
 }
 
-V7_PRIVATE void throw_exception(struct v7 *v7, const char *type,
+V7_PRIVATE void throw_exception(struct v7 *v7, enum error_ctor ex,
                                 const char *err_fmt, ...) {
   va_list ap;
   va_start(ap, err_fmt);
   vsnprintf(v7->error_msg, sizeof(v7->error_msg), err_fmt, ap);
   va_end(ap);
-  throw_value(v7, create_exception(v7, type, v7->error_msg));
+  throw_value(v7, create_exception(v7, ex, v7->error_msg));
 } /* LCOV_EXCL_LINE */
 
 V7_PRIVATE val_t i_value_of(struct v7 *v7, val_t v) {
@@ -7695,8 +7697,8 @@ static double i_num_unary_op(struct v7 *v7, enum ast_tag tag, double a) {
     case AST_NEGATIVE:
       return -a;
     default:
-      throw_exception(v7, "InternalError", "%s", __func__); /* LCOV_EXCL_LINE */
-      return 0;                                             /* LCOV_EXCL_LINE */
+      throw_exception(v7, INTERNAL_ERROR, "%s", __func__); /* LCOV_EXCL_LINE */
+      return 0;                                            /* LCOV_EXCL_LINE */
   }
 }
 
@@ -7719,8 +7721,8 @@ static double i_int_bin_op(struct v7 *v7, enum ast_tag tag, double a,
     case AST_AND:
       return ia & ib;
     default:
-      throw_exception(v7, "InternalError", "%s", __func__); /* LCOV_EXCL_LINE */
-      return 0;                                             /* LCOV_EXCL_LINE */
+      throw_exception(v7, INTERNAL_ERROR, "%s", __func__); /* LCOV_EXCL_LINE */
+      return 0;                                            /* LCOV_EXCL_LINE */
   }
 }
 
@@ -7757,8 +7759,8 @@ static double i_num_bin_op(struct v7 *v7, enum ast_tag tag, double a,
     case AST_AND:
       return i_int_bin_op(v7, tag, a, b);
     default:
-      throw_exception(v7, "InternalError", "%s", __func__); /* LCOV_EXCL_LINE */
-      return 0;                                             /* LCOV_EXCL_LINE */
+      throw_exception(v7, INTERNAL_ERROR, "%s", __func__); /* LCOV_EXCL_LINE */
+      return 0;                                            /* LCOV_EXCL_LINE */
   }
 }
 
@@ -7779,8 +7781,8 @@ static int i_bool_bin_op(struct v7 *v7, enum ast_tag tag, double a, double b) {
     case AST_GE:
       return a >= b;
     default:
-      throw_exception(v7, "InternalError", "%s", __func__); /* LCOV_EXCL_LINE */
-      return 0;                                             /* LCOV_EXCL_LINE */
+      throw_exception(v7, INTERNAL_ERROR, "%s", __func__); /* LCOV_EXCL_LINE */
+      return 0;                                            /* LCOV_EXCL_LINE */
   }
 }
 
@@ -7909,7 +7911,7 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
             res = v7_create_boolean(cmp >= 0);
             break;
           default:
-            throw_exception(v7, "InternalError", "Unhandled op");
+            throw_exception(v7, INTERNAL_ERROR, "Unhandled op");
         }
       } else {
         res = v7_create_boolean(
@@ -7986,7 +7988,7 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
           name = buf;
           break;
         default:
-          throw_exception(v7, "ReferenceError",
+          throw_exception(v7, REFERENCE_ERROR,
                           "Invalid left-hand side in assignment");
           /* unreacheable */
           return v7_create_undefined(); /* LCOV_EXCL_LINE */
@@ -8106,7 +8108,7 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
             if (v7->strict_mode &&
                 v7_get_own_property(v7, res, name, name_len) != NULL) {
               /* Ideally this should be thrown at parse time */
-              throw_exception(v7, "SyntaxError",
+              throw_exception(v7, SYNTAX_ERROR,
                               "duplicate data property in object literal "
                               "not allowed in strict mode");
             }
@@ -8139,7 +8141,7 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
             break;
           }
           default:
-            throw_exception(v7, "InternalError",
+            throw_exception(v7, INTERNAL_ERROR,
                             "Expecting AST_(PROP|GETTER|SETTER) got %d", tag);
         }
       }
@@ -8180,7 +8182,7 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
       name = ast_get_inlined_data(a, *pos, &name_len);
       ast_move_to_children(a, pos);
       if ((p = v7_get_property(v7, scope, name, name_len)) == NULL) {
-        throw_exception(v7, "ReferenceError", "[%.*s] is not defined",
+        throw_exception(v7, REFERENCE_ERROR, "[%.*s] is not defined",
                         (int) name_len, name);
       }
       res = v7_property_value(v7, scope, p);
@@ -8320,7 +8322,7 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
             lval = root;
           }
           if (v7->strict_mode) {
-            throw_exception(v7, "SyntaxError", "Delete in strict");
+            throw_exception(v7, SYNTAX_ERROR, "Delete in strict");
           }
           break;
         case AST_MEMBER:
@@ -8355,7 +8357,7 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
       v1 = i_eval_expr(v7, a, pos, scope);
       v2 = i_eval_expr(v7, a, pos, scope);
       if (!v7_is_function(v2) && !v7_is_cfunction(i_value_of(v7, v2))) {
-        throw_exception(v7, "TypeError",
+        throw_exception(v7, TYPE_ERROR,
                         "Expecting a function in instanceof check");
       }
       res = v7_create_boolean(
@@ -8366,7 +8368,7 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
       res = v7_create_undefined();
       break;
     default:
-      throw_exception(v7, "InternalError", "%s: %s", __func__,
+      throw_exception(v7, INTERNAL_ERROR, "%s: %s", __func__,
                       def->name); /* LCOV_EXCL_LINE */
       /* unreacheable */
       break;
@@ -8490,7 +8492,7 @@ static val_t i_eval_call(struct v7 *v7, struct ast *a, ast_off_t *pos,
   ast_off_t end, fpos, fend, fbody;
   val_t frame = v7_create_undefined(), res = v7_create_undefined();
   val_t v1 = v7_create_undefined(), args = v7_create_undefined();
-  val_t old_this = v7->this_object;
+  val_t cfunc = v7_create_undefined(), old_this = v7->this_object;
   struct v7_function *func;
   enum ast_tag tag;
   char *name;
@@ -8507,38 +8509,29 @@ static val_t i_eval_call(struct v7 *v7, struct ast *a, ast_off_t *pos,
 
   end = ast_get_skip(a, *pos, AST_END_SKIP);
   ast_move_to_children(a, pos);
-  v1 = i_eval_expr(v7, a, pos, scope);
+  cfunc = v1 = i_eval_expr(v7, a, pos, scope);
   if (!v7_is_cfunction(v1) && !v7_is_function(v1)) {
-    v1 = i_value_of(v7, v1);
-  }
-
-  if (v7_is_cfunction(v1)) {
-    args = v7_create_array(v7);
-    for (i = 0; *pos < end; i++) {
-      res = i_eval_expr(v7, a, pos, scope);
-      n = snprintf(buf, sizeof(buf), "%d", i);
-      v7_set_property(v7, args, buf, n, 0, res);
+    /* extract the hidden property from a cfunction_object */
+    struct v7_property *p;
+    p = v7_get_own_property2(v7, v1, "", 0, V7_PROPERTY_HIDDEN);
+    if (p != NULL) {
+      cfunc = p->value;
     }
-    res = v7_to_cfunction(v1)(v7, this_object, args);
-    goto cleanup;
-  }
-  if (!v7_is_function(v1)) {
-    throw_exception(v7, "TypeError", "%s",
-                    "value is not a function"); /* LCOV_EXCL_LINE */
   }
 
-  func = v7_to_function(v1);
   if (is_constructor) {
-    val_t fun_proto = v7_get(v7, v1, "prototype", 9);
-    tmp_stack_push(&tf, &fun_proto);
-    if (!v7_is_object(fun_proto)) {
-      /* TODO(mkm): box primitive value */
-      throw_exception(v7, "TypeError",
-                      "Cannot set a primitive value as object prototype");
+    if (!v7_is_cfunction(v1)) {
+      val_t fun_proto = v7_get(v7, v1, "prototype", 9);
+      tmp_stack_push(&tf, &fun_proto);
+      if (!v7_is_object(fun_proto)) {
+        /* TODO(mkm): box primitive value */
+        throw_exception(v7, TYPE_ERROR,
+                        "Cannot set a primitive value as object prototype");
+      }
+      v7_to_object(this_object)->prototype = v7_to_object(fun_proto);
     }
-    v7_to_object(this_object)->prototype = v7_to_object(fun_proto);
-  } else if (v7_is_undefined(this_object) &&
-             !(func->attributes & V7_FUNCTION_STRICT)) {
+  } else if (v7_is_undefined(this_object) && v7_is_function(v1) &&
+             !(v7_to_function(v1)->attributes & V7_FUNCTION_STRICT)) {
     /*
      * null and undefined are replaced with `global` in non-strict mode,
      * as per ECMA-262 6th, 19.2.3.3.
@@ -8546,6 +8539,22 @@ static val_t i_eval_call(struct v7 *v7, struct ast *a, ast_off_t *pos,
     this_object = v7->global_object;
   }
 
+  if (v7_is_cfunction(cfunc)) {
+    args = v7_create_array(v7);
+    for (i = 0; *pos < end; i++) {
+      res = i_eval_expr(v7, a, pos, scope);
+      n = snprintf(buf, sizeof(buf), "%d", i);
+      v7_set_property(v7, args, buf, n, 0, res);
+    }
+    res = v7_to_cfunction(cfunc)(v7, this_object, args);
+    goto cleanup;
+  }
+  if (!v7_is_function(v1)) {
+    throw_exception(v7, TYPE_ERROR, "%s",
+                    "value is not a function"); /* LCOV_EXCL_LINE */
+  }
+
+  func = v7_to_function(v1);
   frame = i_prepare_call(v7, func, &fpos, &fbody, &fend);
 
   /*
@@ -8835,7 +8844,7 @@ static val_t i_eval_stmt(struct v7 *v7, struct ast *a, ast_off_t *pos,
       while (*pos < end) {
         switch (case_tag = ast_fetch_tag(a, pos)) {
           default:
-            throw_exception(v7, "InternalError", /* LCOV_EXCL_LINE */
+            throw_exception(v7, INTERNAL_ERROR, /* LCOV_EXCL_LINE */
                             "invalid ast node %d", case_tag);
           case AST_DEFAULT:
             default_pos = *pos;
@@ -8961,7 +8970,7 @@ static val_t i_eval_stmt(struct v7 *v7, struct ast *a, ast_off_t *pos,
        */
       with_scope = i_eval_expr(v7, a, pos, scope);
       if (!v7_is_object(with_scope)) {
-        throw_exception(v7, "InternalError",
+        throw_exception(v7, INTERNAL_ERROR,
                         "with statement is not really implemented yet");
       }
       i_eval_stmts(v7, a, pos, end, with_scope, brk);
@@ -9030,12 +9039,21 @@ val_t v7_apply(struct v7 *v7, val_t f, val_t this_object, val_t args) {
   tmp_stack_push(&vf, &f);
   tmp_stack_push(&vf, &this_object);
 
+  if (!v7_is_cfunction(f) && !v7_is_function(f)) {
+    /* extract the hidden property from a cfunction_object */
+    struct v7_property *p;
+    p = v7_get_own_property2(v7, f, "", 0, V7_PROPERTY_HIDDEN);
+    if (p != NULL) {
+      f = p->value;
+    }
+  }
+
   if (v7_is_cfunction(f)) {
     res = v7_to_cfunction(f)(v7, this_object, args);
     goto cleanup;
   }
   if (!v7_is_function(f)) {
-    throw_exception(v7, "TypeError", "value is not a function");
+    throw_exception(v7, TYPE_ERROR, "value is not a function");
   }
   func = v7_to_function(f);
   frame = i_prepare_call(v7, func, &pos, &body, &end);
@@ -9136,11 +9154,11 @@ enum v7_err v7_exec_file(struct v7 *v7, val_t *res, const char *path) {
   if ((fp = fopen(path, "r")) == NULL) {
     snprintf(v7->error_msg, sizeof(v7->error_msg), "cannot open file [%s]",
              path);
-    *res = create_exception(v7, "Error", v7->error_msg);
+    *res = create_exception(v7, SYNTAX_ERROR, v7->error_msg);
   } else if (fseek(fp, 0, SEEK_END) != 0 || (file_size = ftell(fp)) <= 0) {
     snprintf(v7->error_msg, sizeof(v7->error_msg), "fseek(%s): %s", path,
              strerror(errno));
-    *res = create_exception(v7, "Error", v7->error_msg);
+    *res = create_exception(v7, SYNTAX_ERROR, v7->error_msg);
     fclose(fp);
   } else if ((p = (char *) calloc(1, (size_t) file_size + 1)) == NULL) {
     snprintf(v7->error_msg, sizeof(v7->error_msg), "cannot allocate %ld bytes",
@@ -10799,7 +10817,7 @@ static val_t Obj_getPrototypeOf(struct v7 *v7, val_t this_obj, val_t args) {
   val_t arg = v7_array_get(v7, args, 0);
   (void) this_obj;
   if (!v7_is_object(arg)) {
-    throw_exception(v7, "TypeError",
+    throw_exception(v7, TYPE_ERROR,
                     "Object.getPrototypeOf called on non-object");
   }
   return v_get_prototype(v7, arg);
@@ -10831,7 +10849,7 @@ static val_t _Obj_ownKeys(struct v7 *v7, val_t args,
   val_t obj = v7_array_get(v7, args, 0);
   val_t res = v7_create_array(v7);
   if (!v7_is_object(obj)) {
-    throw_exception(v7, "TypeError", "Object.keys called on non-object");
+    throw_exception(v7, TYPE_ERROR, "Object.keys called on non-object");
   }
 
   _Obj_append_reverse(v7, v7_to_object(obj)->properties, res, 0, ignore_flags);
@@ -10909,7 +10927,7 @@ static val_t Obj_defineProperty(struct v7 *v7, val_t this_obj, val_t args) {
   int name_len;
   (void) this_obj;
   if (!v7_is_object(obj)) {
-    throw_exception(v7, "TypeError", "object expected");
+    throw_exception(v7, TYPE_ERROR, "object expected");
   }
   name_len = v7_stringify_value(v7, name, name_buf, sizeof(name_buf));
   return _Obj_defineProperty(v7, obj, name_buf, name_len, desc);
@@ -10918,7 +10936,7 @@ static val_t Obj_defineProperty(struct v7 *v7, val_t this_obj, val_t args) {
 static void o_define_props(struct v7 *v7, val_t obj, val_t descs) {
   struct v7_property *p;
   if (!v7_is_object(descs)) {
-    throw_exception(v7, "TypeError", "object expected");
+    throw_exception(v7, TYPE_ERROR, "object expected");
   }
   for (p = v7_to_object(descs)->properties; p; p = p->next) {
     size_t n;
@@ -10943,7 +10961,7 @@ static val_t Obj_create(struct v7 *v7, val_t this_obj, val_t args) {
   val_t descs = v7_array_get(v7, args, 1);
   (void) this_obj;
   if (!v7_is_null(proto) && !v7_is_object(proto)) {
-    throw_exception(v7, "TypeError",
+    throw_exception(v7, TYPE_ERROR,
                     "Object prototype may only be an Object or null");
   }
   res = create_object(v7, proto);
@@ -11017,7 +11035,7 @@ static val_t Obj_preventExtensions(struct v7 *v7, val_t this_obj, val_t args) {
   val_t arg = v7_array_get(v7, args, 0);
   (void) this_obj;
   if (!v7_is_object(arg)) {
-    throw_exception(v7, "TypeError", "Object expected");
+    throw_exception(v7, TYPE_ERROR, "Object expected");
   }
   v7_to_object(arg)->attributes |= V7_OBJ_NOT_EXTENSIBLE;
   return arg;
@@ -11027,7 +11045,7 @@ static val_t Obj_isExtensible(struct v7 *v7, val_t this_obj, val_t args) {
   val_t arg = v7_array_get(v7, args, 0);
   (void) this_obj;
   if (!v7_is_object(arg)) {
-    throw_exception(v7, "TypeError", "Object expected");
+    throw_exception(v7, TYPE_ERROR, "Object expected");
   }
   return v7_create_boolean(
       !(v7_to_object(arg)->attributes & V7_OBJ_NOT_EXTENSIBLE));
@@ -11073,27 +11091,42 @@ V7_PRIVATE void init_object(struct v7 *v7) {
  */
 
 
-V7_PRIVATE void init_error(struct v7 *v7) {
-  val_t v;
-  v7_exec(v7, &v, "function Error(m) {this.message = m}");
-  v7_exec(v7, &v,
-          "function TypeError(m) {this.message = m};"
-          "TypeError.prototype = Object.create(Error.prototype)");
-  v7_exec(v7, &v,
-          "function SyntaxError(m) {this.message = m};"
-          "SyntaxError.prototype = Object.create(Error.prototype)");
-  v7_exec(v7, &v,
-          "function ReferenceError(m) {this.message = m};"
-          "ReferenceError.prototype = Object.create(Error.prototype)");
-  v7_exec(v7, &v,
-          "function InternalError(m) {this.message = m};"
-          "ReferenceError.prototype = Object.create(Error.prototype)");
-  v7_exec(v7, &v,
-          "function RangeError(m) {this.message = m};"
-          "RangeError.prototype = Object.create(Error.prototype)");
+static val_t Error_ctor(struct v7 *v7, val_t this_obj, val_t args) {
+  val_t arg0 = v7_array_get(v7, args, 0);
+  val_t res;
 
-  v7->error_prototype =
-      v7_get(v7, v7_get(v7, v7->global_object, "Error", 5), "prototype", 9);
+  if (v7_is_object(this_obj) && this_obj != v7->global_object) {
+    res = this_obj;
+  } else {
+    res = create_object(v7, v7->error_prototype);
+  }
+  /* TODO(mkm): set non enumerable but provide toString method */
+  v7_set_property(v7, res, "message", 7, 0, arg0);
+
+  return res;
+}
+
+static const char *error_names[] = {"TypeError", "SyntaxError",
+                                    "ReferenceError", "InternalError",
+                                    "RangeError"};
+V7_STATIC_ASSERT(ARRAY_SIZE(error_names) == ERROR_CTOR_MAX,
+                 error_name_count_mismatch);
+
+V7_PRIVATE void init_error(struct v7 *v7) {
+  val_t error;
+  size_t i;
+
+  error = v7_create_cfunction_ctor(v7, v7->error_prototype, Error_ctor, 1);
+  v7_set_property(v7, v7->global_object, "Error", 5, V7_PROPERTY_DONT_ENUM,
+                  error);
+
+  for (i = 0; i < ARRAY_SIZE(error_names); i++) {
+    error = v7_create_cfunction_ctor(v7, create_object(v7, v7->error_prototype),
+                                     Error_ctor, 1);
+    v7_set_property(v7, v7->global_object, error_names[i],
+                    strlen(error_names[i]), V7_PROPERTY_DONT_ENUM, error);
+    v7->error_objects[i] = error;
+  }
 }
 /*
  * Copyright (c) 2014 Cesanta Software Limited
@@ -11144,7 +11177,7 @@ static val_t Number_valueOf(struct v7 *v7, val_t this_obj, val_t args) {
       (v7_is_object(this_obj) &&
        v7_object_to_value(v7_to_object(this_obj)->prototype) !=
            v7->number_prototype)) {
-    throw_exception(v7, "TypeError",
+    throw_exception(v7, TYPE_ERROR,
                     "Number.valueOf called on non-number object");
   }
   return Obj_valueOf(v7, this_obj, args);
@@ -11161,7 +11194,7 @@ static val_t Number_toString(struct v7 *v7, val_t this_obj, val_t args) {
   if (!v7_is_double(this_obj) &&
       !(v7_is_object(this_obj) &&
         is_prototype_of(v7, this_obj, v7->number_prototype))) {
-    throw_exception(v7, "TypeError",
+    throw_exception(v7, TYPE_ERROR,
                     "Number.toString called on non-number object");
   }
 
@@ -11183,7 +11216,6 @@ V7_PRIVATE void init_number(struct v7 *v7) {
       v7_create_cfunction_ctor(v7, v7->number_prototype, Number_ctor, 1);
   v7_set_property(v7, v7->global_object, "Number", 6, V7_PROPERTY_DONT_ENUM,
                   num);
-  v7->number_object = num;
 
   set_cfunc_prop(v7, v7->number_prototype, "toFixed", Number_toFixed);
   set_cfunc_prop(v7, v7->number_prototype, "toPrecision", Number_toPrecision);
@@ -11610,7 +11642,7 @@ typedef void (*fbreaktime_t)(const etime_t *, struct timeparts *);
 static val_t d_trytogetobjforstring(struct v7 *v7, val_t obj) {
   val_t ret = i_value_of(v7, obj);
   if (ret == V7_TAG_NAN) {
-    throw_exception(v7, "TypeError", "Date is invalid (for string)");
+    throw_exception(v7, TYPE_ERROR, "Date is invalid (for string)");
   }
   return ret;
 }
@@ -12180,7 +12212,7 @@ static val_t Date_valueOf(struct v7 *v7, val_t this_obj, val_t args) {
   if (!v7_is_object(this_obj) ||
       (v7_is_object(this_obj) &&
        v7_to_object(this_obj)->prototype != v7_to_object(v7->date_prototype))) {
-    throw_exception(v7, "TypeError", "Date.valueOf called on non-Date object");
+    throw_exception(v7, TYPE_ERROR, "Date.valueOf called on non-Date object");
   }
 
   return Obj_valueOf(v7, this_obj, args);
@@ -12213,7 +12245,7 @@ static val_t Date_parse(struct v7 *v7, val_t this_obj, val_t args) {
   (void) args;
 
   if (!d_iscalledasfunction(v7, this_obj)) {
-    throw_exception(v7, "TypeError", "Date.parse() called on object");
+    throw_exception(v7, TYPE_ERROR, "Date.parse() called on object");
   }
 
   if (v7_array_length(v7, args) >= 1) {
@@ -12234,7 +12266,7 @@ static val_t Date_UTC(struct v7 *v7, val_t this_obj, val_t args) {
   (void) args;
 
   if (!d_iscalledasfunction(v7, this_obj)) {
-    throw_exception(v7, "TypeError", "Date.now() called on object");
+    throw_exception(v7, TYPE_ERROR, "Date.now() called on object");
   }
 
   ret_time = d_time_number_from_arr(v7, this_obj, args, tpyear, 0, d_gmktime);
@@ -12355,7 +12387,7 @@ static val_t Function_ctor(struct v7 *v7, val_t this_obj, val_t args) {
   n += snprintf(buf + n, sizeof(buf) - n, "%s", "})");
 
   if (v7_exec_with(v7, &res, buf, V7_UNDEFINED) != V7_OK) {
-    throw_exception(v7, "SyntaxError", "Invalid function body");
+    throw_exception(v7, SYNTAX_ERROR, "Invalid function body");
   }
 
   return res;
@@ -12636,6 +12668,7 @@ V7_PRIVATE void init_stdlib(struct v7 *v7) {
   v7->string_prototype = v7_create_object(v7);
   v7->regexp_prototype = v7_create_object(v7);
   v7->number_prototype = v7_create_object(v7);
+  v7->error_prototype = v7_create_object(v7);
   v7->global_object = v7_create_object(v7);
   v7->this_object = v7->global_object;
   v7->date_prototype = v7_create_object(v7);
@@ -12774,7 +12807,7 @@ static val_t Regex_ctor(struct v7 *v7, val_t this_obj, val_t args) {
     }
     if (slre_compile(re, re_len, flags, flags_len, &p, 1) != SLRE_OK ||
         p == NULL) {
-      throw_exception(v7, "TypeError", "Invalid regex");
+      throw_exception(v7, TYPE_ERROR, "Invalid regex");
       return v7_create_undefined();
     } else {
       rp = (struct v7_regexp *) malloc(sizeof(*rp));
