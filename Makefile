@@ -8,7 +8,10 @@ TOP_HEADERS=$(addprefix $(SRC_DIR)/, $(HEADERS))
 
 CLANG:=clang
 # installable with: `brew install llvm36 --with-clang`
-CLANG_FORMAT:=/usr/local/bin/clang-format-3.6
+CLANG_FORMAT:=/usr/bin/clang-format-3.6
+ifneq ("$(wildcard /usr/local/bin/clang-format-3.6)","")
+	CLANG_FORMAT:=/usr/local/bin/clang-format-3.6
+endif
 
 ifneq ("$(wildcard /usr/local/bin/clang-3.5)","")
 	CLANG:=/usr/local/bin/clang-3.5
@@ -44,7 +47,7 @@ all_warnings: v7.c
 	./$@
 
 v7: $(TOP_HEADERS) $(TOP_SOURCES) v7.h
-	$(CC) $(TOP_SOURCES) -o $@ -DV7_EXE -DV7_EXPOSE_PRIVATE $(CFLAGS) -lm
+	$(CC) $(TOP_SOURCES) -o $@ -DV7_EXE -DV7_EXPOSE_PRIVATE -DV7_DISABLE_SOCKETS $(CFLAGS) -lm
 #	$(CC) $(TOP_SOURCES) -o $@ -DV7_EXE $(CFLAGS) -lm
 
 asan_v7:
