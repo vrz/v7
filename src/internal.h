@@ -253,6 +253,8 @@ struct v7 {
   struct mbuf allocated_asts;
 
   val_t predefined_strings[PREDEFINED_STR_MAX];
+  /* singleton, pointer because of amalgamation */
+  struct v7_property *cur_dense_prop;
 };
 
 #ifndef ARRAY_SIZE
@@ -286,6 +288,10 @@ V7_PRIVATE void throw_exception(struct v7 *, enum error_ctor, const char *,
 V7_PRIVATE size_t unescape(const char *s, size_t len, char *to);
 
 V7_PRIVATE void init_js_stdlib(struct v7 *);
+
+V7_PRIVATE val_t Regex_ctor(struct v7 *v7, val_t this_obj, val_t args);
+
+V7_PRIVATE val_t rx_exec(struct v7 *v7, val_t rx, val_t str, int lind);
 
 #if defined(__cplusplus)
 }
