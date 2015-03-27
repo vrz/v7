@@ -29,11 +29,57 @@
 #define SLRE_MAX_RANGES 32
 #define SLRE_MAX_SETS 16
 #define SLRE_MAX_REP 0xFFFF
-#define SLRE_MAX_THREADS 100
 
 #define SLRE_MALLOC malloc
 #define SLRE_FREE free
 #define SLRE_THROW(e, err_code) longjmp((e)->jmp_buf, (err_code))
+
+static int hex(int c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -SLRE_INVALID_HEX_DIGIT;
+}
+
+int nextesc(const char **p) {
+  const unsigned char *s = (unsigned char *) (*p)++;
+  switch (*s) {
+    case 0:
+      return -SLRE_UNTERM_ESC_SEQ;
+    case 'c':
+      ++*p;
+      return *s & 31;
+    case 'f':
+      return '\f';
+    case 'n':
+      return '\n';
+    case 'r':
+      return '\r';
+    case 't':
+      return '\t';
+    case 'v':
+      return '\v';
+    case '\\':
+      return '\\';
+    case 'u':
+      if (isxdigit(s[1]) && isxdigit(s[2]) && isxdigit(s[3]) &&
+          isxdigit(s[4])) {
+        (*p) += 4;
+        return hex(s[1]) << 12 | hex(s[2]) << 8 | hex(s[3]) << 4 | hex(s[4]);
+      }
+      return -SLRE_INVALID_HEX_DIGIT;
+    case 'x':
+      if (isxdigit(s[1]) && isxdigit(s[2])) {
+        (*p) += 2;
+        return (hex(s[1]) << 4) | hex(s[2]);
+      }
+      return -SLRE_INVALID_HEX_DIGIT;
+    default:
+      return -SLRE_INVALID_ESC_CHAR;
+  }
+}
+
+#ifndef V7_DISABLE_REGEX
 
 /* Parser Information */
 struct slre_node {
@@ -117,6 +163,7 @@ struct slre_env {
 };
 
 struct slre_thread {
+  struct slre_thread *prev;
   struct slre_instruction *pc;
   const char *start;
   struct slre_loot loot;
@@ -183,51 +230,6 @@ static unsigned char re_dec_digit(struct slre_env *e, int c) {
     SLRE_THROW(e, SLRE_INVALID_DEC_DIGIT);
   }
   return ret;
-}
-
-static int hex(int c) {
-  if (c >= '0' && c <= '9') return c - '0';
-  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-  return -SLRE_INVALID_HEX_DIGIT;
-}
-
-int nextesc(const char **p) {
-  const unsigned char *s = (unsigned char *) (*p)++;
-  switch (*s) {
-    case 0:
-      return -SLRE_UNTERM_ESC_SEQ;
-    case 'c':
-      ++*p;
-      return *s & 31;
-    case 'f':
-      return '\f';
-    case 'n':
-      return '\n';
-    case 'r':
-      return '\r';
-    case 't':
-      return '\t';
-    case 'v':
-      return '\v';
-    case '\\':
-      return '\\';
-    case 'u':
-      if (isxdigit(s[1]) && isxdigit(s[2]) && isxdigit(s[3]) &&
-          isxdigit(s[4])) {
-        (*p) += 4;
-        return hex(s[1]) << 12 | hex(s[2]) << 8 | hex(s[3]) << 4 | hex(s[4]);
-      }
-      return -SLRE_INVALID_HEX_DIGIT;
-    case 'x':
-      if (isxdigit(s[1]) && isxdigit(s[2])) {
-        (*p) += 2;
-        return (hex(s[1]) << 4) | hex(s[2]);
-      }
-      return -SLRE_INVALID_HEX_DIGIT;
-    default:
-      return -SLRE_INVALID_ESC_CHAR;
-  }
 }
 
 static int re_nextc(Rune *r, const char **src, const char *src_end) {
@@ -1181,11 +1183,27 @@ void slre_free(struct slre_prog *prog) {
   }
 }
 
-static void re_newthread(struct slre_thread *t, struct slre_instruction *pc,
-                         const char *start, struct slre_loot *loot) {
+static struct slre_thread *re_newthread(struct slre_thread *t,
+                                        struct slre_instruction *pc,
+                                        const char *start,
+                                        struct slre_loot *loot) {
+  struct slre_thread *new_thread =
+      (struct slre_thread *) SLRE_MALLOC(sizeof(struct slre_thread));
+  if (new_thread != NULL) new_thread->prev = t;
   t->pc = pc;
   t->start = start;
   t->loot = *loot;
+  return new_thread;
+}
+
+static struct slre_thread *get_prev_thread(struct slre_thread *t) {
+  struct slre_thread *tmp_thr = t->prev;
+  SLRE_FREE(t);
+  return tmp_thr;
+}
+
+static void free_threads(struct slre_thread *t) {
+  while (t->prev != NULL) t = get_prev_thread(t);
 }
 
 #define RE_NO_MATCH() \
@@ -1197,23 +1215,25 @@ static unsigned char re_match(struct slre_instruction *pc, const char *current,
   struct slre_loot sub, tmpsub;
   Rune c, r;
   struct slre_range *p;
-  unsigned short thr_num = 1;
   unsigned char thr;
   size_t i;
-  struct slre_thread threads[SLRE_MAX_THREADS];
+  struct slre_thread thread, *curr_thread, *tmp_thr;
 
   /* queue initial thread */
-  re_newthread(threads, pc, current, loot);
+  thread.prev = NULL;
+  curr_thread = re_newthread(&thread, pc, current, loot);
 
   /* run threads in stack order */
   do {
-    pc = threads[--thr_num].pc;
-    current = threads[thr_num].start;
-    sub = threads[thr_num].loot;
+    curr_thread = get_prev_thread(curr_thread);
+    pc = curr_thread->pc;
+    current = curr_thread->start;
+    sub = curr_thread->loot;
     for (thr = 1; thr;) {
       switch (pc->opcode) {
         case I_END:
           memcpy(loot->caps, sub.caps, sizeof loot->caps);
+          free_threads(curr_thread);
           return 1;
         case I_ANY:
         case I_ANYNL:
@@ -1325,11 +1345,14 @@ static unsigned char re_match(struct slre_instruction *pc, const char *current,
           RE_NO_MATCH();
 
         case I_SPLIT:
-          if (thr_num >= SLRE_MAX_THREADS) {
-            fprintf(stderr, "re_match: backtrack overflow!\n");
+          tmp_thr = curr_thread;
+          curr_thread =
+              re_newthread(curr_thread, pc->par.xy.y.y, current, &sub);
+          if (curr_thread == NULL) {
+            fprintf(stderr, "re_match: no memory for thread!\n");
+            free_threads(tmp_thr);
             return 0;
           }
-          re_newthread(&threads[thr_num++], pc->par.xy.y.y, current, &sub);
           pc = pc->par.xy.x;
           continue;
 
@@ -1346,7 +1369,7 @@ static unsigned char re_match(struct slre_instruction *pc, const char *current,
       }
       pc++;
     }
-  } while (thr_num);
+  } while (curr_thread->prev != NULL);
   return 0;
 }
 
@@ -1633,3 +1656,5 @@ int main(int argc, char **argv) {
   return err_code;
 }
 #endif /* SLRE_TEST */
+
+#endif /* V7_DISABLE_REGEX */
