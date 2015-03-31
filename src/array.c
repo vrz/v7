@@ -144,7 +144,7 @@ static void a_qsort(val_t *a, int l, int r, void *user_data) {
 static val_t a_sort(struct v7 *v7, val_t obj, val_t args,
                     int (*sorting_func)(void *, const void *, const void *)) {
   int i = 0, len = v7_array_length(v7, obj);
-  val_t *arr = (val_t *) malloc(len * sizeof(arr[0]));
+  val_t *arr = (val_t *) V7_MALLOC(len * sizeof(arr[0]));
   val_t arg0 = v7_array_get(v7, args, 0);
 
   if (!v7_is_object(obj)) return obj;
@@ -165,7 +165,7 @@ static val_t a_sort(struct v7 *v7, val_t obj, val_t args,
     v7_array_set(v7, obj, i, arr[len - (i + 1)]);
   }
 
-  free(arr);
+  v7_FREE(arr);
 
   return obj;
 }
@@ -209,12 +209,12 @@ static val_t Array_join(struct v7 *v7, val_t this_obj, val_t args) {
       p = buf;
       n = to_str(v7, v7_array_get(v7, this_obj, i), buf, sizeof(buf), 0);
       if (n > (long) sizeof(buf)) {
-        p = (char *) malloc(n + 1);
+        p = (char *) V7_MALLOC(n + 1);
         to_str(v7, v7_array_get(v7, this_obj, i), p, n, 0);
       }
       mbuf_append(&m, p, n);
       if (p != buf) {
-        free(p);
+        v7_FREE(p);
       }
     }
 

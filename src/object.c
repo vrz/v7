@@ -198,7 +198,7 @@ static enum v7_err Obj_toString(struct v7_c_func_arg *cfa) {
   char *p, buf[500];
   p = v7_stringify(cfa->this_obj, buf, sizeof(buf));
   v7_push_string(cfa->v7, p, strlen(p), 1);
-  if (p != buf) free(p);
+  if (p != buf) v7_FREE(p);
   return V7_OK;
 }
 

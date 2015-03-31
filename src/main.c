@@ -28,7 +28,7 @@ static char *read_file(const char *path, size_t *size) {
   char *data = NULL;
   if ((fp = fopen(path, "rb")) != NULL && !fstat(fileno(fp), &st)) {
     *size = st.st_size;
-    data = (char *) malloc(*size + 1);
+    data = (char *) V7_MALLOC(*size + 1);
     if (data != NULL) {
       fread(data, 1, *size, fp);
       data[*size] = '\0';
@@ -57,7 +57,7 @@ static void print_error(struct v7 *v7, const char *f, val_t e) {
   char *s = v7_to_json(v7, e, buf, sizeof(buf));
   fprintf(stderr, "Exec error [%s]: %s\n", f, s);
   if (s != buf) {
-    free(s);
+    v7_FREE(s);
   }
 }
 
@@ -99,7 +99,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Cannot read [%s]\n", argv[i]);
       } else {
         dump_ast(v7, source_code, binary_ast);
-        free(source_code);
+        v7_FREE(source_code);
       }
     } else if (v7_exec_file(v7, &res, argv[i]) != V7_OK) {
       print_error(v7, argv[i], res);

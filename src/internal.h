@@ -6,8 +6,6 @@
 #ifndef V7_INTERNAL_H_INCLUDED
 #define V7_INTERNAL_H_INCLUDED
 
-#include "license.h"
-
 /* Check whether we're compiling in an environment with no filesystem */
 #if defined(ARDUINO) && (ARDUINO == 106)
 #define V7_NO_FS
@@ -37,7 +35,6 @@
 
 #include <sys/stat.h>
 #include <assert.h>
-#include <ctype.h>
 #include <errno.h>
 #include <float.h>
 #include <limits.h>
@@ -54,25 +51,6 @@
 /* Public API. Implemented in api.c */
 #include "../v7.h"
 
-#ifdef V7_WINDOWS
-#define vsnprintf _vsnprintf
-#define snprintf _snprintf
-#define isnan(x) _isnan(x)
-#define isinf(x) (!_finite(x))
-#define __unused
-typedef __int64 int64_t;
-typedef int int32_t;
-typedef unsigned int uint32_t;
-typedef unsigned short uint16_t;
-typedef unsigned char uint8_t;
-typedef unsigned long uintptr_t;
-#define __func__ ""
-#else
-#include <sys/time.h>
-#include <stdint.h>
-#include <unistd.h>
-#include <fcntl.h>
-#endif
 
 /* Private API */
 #include "utf.h"
@@ -293,7 +271,7 @@ struct v7 {
   do {                                                         \
     char buf[200], *p = v7_to_json(v7, val, buf, sizeof(buf)); \
     printf("%s %d: [%s]\n", __func__, __LINE__, p);            \
-    if (p != buf) free(p);                                     \
+    if (p != buf) v7_FREE(p);                                  \
   } while (0)
 
 #if defined(__cplusplus)

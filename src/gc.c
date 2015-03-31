@@ -63,7 +63,7 @@ V7_PRIVATE void gc_arena_destroy(struct v7 *v7, struct gc_arena *a) {
     if (a->destructor != NULL) {
       gc_sweep(v7, a, 0);
     }
-    free(a->base);
+    v7_FREE(a->base);
   }
 }
 
@@ -83,7 +83,7 @@ V7_PRIVATE void gc_arena_grow(struct v7 *v7, struct gc_arena *a,
   size_t old_size = a->size;
   uint32_t old_alive = a->alive;
   a->size = new_size;
-  a->base = (char *) realloc(a->base, a->size * a->cell_size);
+  a->base = (char *) V7_REALLOC(a->base, a->size * a->cell_size);
   memset(a->base + old_size * a->cell_size, 0,
          (a->size - old_size) * a->cell_size);
   /* in case we grow preemptively */
@@ -96,7 +96,7 @@ V7_PRIVATE void gc_arena_grow(struct v7 *v7, struct gc_arena *a,
 V7_PRIVATE void *gc_alloc_cell(struct v7 *v7, struct gc_arena *a) {
 #ifdef V7_DISABLE_GC
   (void) v7;
-  return calloc(1, a->cell_size);
+  return V7_CALLOC(1, a->cell_size);
 #else
   char **r;
   if (a->free == NULL) {

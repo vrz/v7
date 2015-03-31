@@ -266,7 +266,7 @@ v7_val_t v7_create_regexp(struct v7 *v7, const char *re, size_t re_len,
     throw_exception(v7, TYPE_ERROR, "Invalid regex");
     return V7_UNDEFINED;
   } else {
-    rp = (struct v7_regexp *) malloc(sizeof(*rp));
+    rp = (struct v7_regexp *) V7_MALLOC(sizeof(*rp));
     rp->regexp_string = v7_create_string(v7, re, re_len, 1);
     rp->compiled_regexp = p;
     rp->lastIndex = 0;
@@ -530,7 +530,7 @@ char *v7_to_json(struct v7 *v7, val_t v, char *buf, size_t size) {
 
   if (len > (int) size) {
     /* Buffer is not large enough. Allocate a bigger one */
-    char *p = (char *) malloc(len + 1);
+    char *p = (char *) V7_MALLOC(len + 1);
     to_str(v7, v, p, len + 1, 1);
     p[len] = '\0';
     return p;
@@ -937,7 +937,7 @@ int v7_array_set(struct v7 *v7, val_t arr, unsigned long index, val_t v) {
       }
 
       if (abuf == NULL) {
-        abuf = (struct mbuf *) malloc(sizeof(*abuf));
+        abuf = (struct mbuf *) V7_MALLOC(sizeof(*abuf));
         mbuf_init(abuf, sizeof(val_t) * (index + 1));
         p->value = v7_create_foreign(abuf);
       }
@@ -1125,7 +1125,7 @@ V7_PRIVATE val_t to_string(struct v7 *v7, val_t v) {
   }
   res = v7_create_string(v7, s, strlen(s), 1);
   if (p != buf) {
-    free(p);
+    v7_FREE(p);
   }
 
   return res;
@@ -1293,7 +1293,7 @@ static void object_destructor(struct v7 *v7, void *ptr) {
     if (p != NULL &&
         ((abuf = (struct mbuf *) v7_to_foreign(p->value)) != NULL)) {
       mbuf_free(abuf);
-      free(abuf);
+      v7_FREE(abuf);
     }
   }
 }
@@ -1314,9 +1314,9 @@ struct v7 *v7_create(void) {
   _v7_nan = zero / zero;
 #endif
 
-  if ((v7 = (struct v7 *) calloc(1, sizeof(*v7))) != NULL) {
+  if ((v7 = (struct v7 *) V7_CALLOC(1, sizeof(*v7))) != NULL) {
     v7->cur_dense_prop =
-        (struct v7_property *) calloc(1, sizeof(struct v7_property));
+        (struct v7_property *) V7_CALLOC(1, sizeof(struct v7_property));
 #define GC_SIZE (64 * 10)
     gc_arena_init(v7, &v7->object_arena, sizeof(struct v7_object), GC_SIZE,
                   "object");
@@ -1368,7 +1368,7 @@ void v7_destroy(struct v7 *v7) {
     gc_arena_destroy(v7, &v7->function_arena);
     gc_arena_destroy(v7, &v7->property_arena);
 
-    free(v7->cur_dense_prop);
-    free(v7);
+    v7_FREE(v7->cur_dense_prop);
+    v7_FREE(v7);
   }
 }

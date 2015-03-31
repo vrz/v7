@@ -19,6 +19,8 @@
 #ifndef V7_HEADER_INCLUDED
 #define V7_HEADER_INCLUDED
 
+#include "v7_cfg.h"
+
 #define _POSIX_C_SOURCE 200809L
 
 #include <stddef.h> /* For size_t */
@@ -30,16 +32,6 @@ enum v7_err { V7_OK, V7_SYNTAX_ERROR, V7_EXEC_EXCEPTION };
 struct v7;     /* Opaque structure. V7 engine handler. */
 struct v7_val; /* Opaque structure. Holds V7 value, which has v7_type type. */
 
-#if (defined(_WIN32) && !defined(__MINGW32__) && !defined(__MINGW64__)) || \
-    (defined(_MSC_VER) && _MSC_VER <= 1200)
-#define V7_WINDOWS
-#endif
-
-#ifdef V7_WINDOWS
-typedef unsigned __int64 uint64_t;
-#else
-#include <inttypes.h>
-#endif
 typedef uint64_t v7_val_t;
 
 typedef v7_val_t (*v7_cfunction_t)(struct v7 *, v7_val_t, v7_val_t);
@@ -641,7 +633,6 @@ struct gc_arena {
 #ifndef V7_INTERNAL_H_INCLUDED
 #define V7_INTERNAL_H_INCLUDED
 
-
 /* Check whether we're compiling in an environment with no filesystem */
 #if defined(ARDUINO) && (ARDUINO == 106)
 #define V7_NO_FS
@@ -671,7 +662,6 @@ struct gc_arena {
 
 #include <sys/stat.h>
 #include <assert.h>
-#include <ctype.h>
 #include <errno.h>
 #include <float.h>
 #include <limits.h>
@@ -687,25 +677,6 @@ struct gc_arena {
 
 /* Public API. Implemented in api.c */
 
-#ifdef V7_WINDOWS
-#define vsnprintf _vsnprintf
-#define snprintf _snprintf
-#define isnan(x) _isnan(x)
-#define isinf(x) (!_finite(x))
-#define __unused
-typedef __int64 int64_t;
-typedef int int32_t;
-typedef unsigned int uint32_t;
-typedef unsigned short uint16_t;
-typedef unsigned char uint8_t;
-typedef unsigned long uintptr_t;
-#define __func__ ""
-#else
-#include <sys/time.h>
-#include <stdint.h>
-#include <unistd.h>
-#include <fcntl.h>
-#endif
 
 /* Private API */
 
@@ -917,7 +888,7 @@ struct v7 {
   do {                                                         \
     char buf[200], *p = v7_to_json(v7, val, buf, sizeof(buf)); \
     printf("%s %d: [%s]\n", __func__, __LINE__, p);            \
-    if (p != buf) free(p);                                     \
+    if (p != buf) v7_FREE(p);                                  \
   } while (0)
 
 #if defined(__cplusplus)
@@ -1355,7 +1326,7 @@ V7_PRIVATE void mbuf_init(struct mbuf *mbuf, size_t initial_size) {
 /* Frees the space allocated for the iobuffer and resets the iobuf structure. */
 V7_PRIVATE void mbuf_free(struct mbuf *mbuf) {
   if (mbuf->buf != NULL) {
-    free(mbuf->buf);
+    v7_FREE(mbuf->buf);
     mbuf_init(mbuf, 0);
   }
 }
@@ -1369,7 +1340,7 @@ V7_PRIVATE void mbuf_free(struct mbuf *mbuf) {
 V7_PRIVATE void mbuf_resize(struct mbuf *a, size_t new_size) {
   char *p;
   if ((new_size > a->size || (new_size < a->size && new_size >= a->len)) &&
-      (p = (char *) realloc(a->buf, new_size)) != NULL) {
+      (p = (char *) V7_REALLOC(a->buf, new_size)) != NULL) {
     a->size = new_size;
     a->buf = p;
   }
@@ -1413,7 +1384,7 @@ mbuf_insert(struct mbuf *a, size_t off, const char *buf, size_t len) {
       memcpy(a->buf + off, buf, len);
     }
     a->len += len;
-  } else if ((p = (char *) realloc(
+  } else if ((p = (char *) V7_REALLOC(
                   a->buf, (a->len + len) * MBUF_SIZE_MULTIPLIER)) != NULL) {
     a->buf = p;
     memmove(a->buf + off + len, a->buf + off, a->len - off);
@@ -3649,7 +3620,7 @@ static void a_qsort(val_t *a, int l, int r, void *user_data) {
 static val_t a_sort(struct v7 *v7, val_t obj, val_t args,
                     int (*sorting_func)(void *, const void *, const void *)) {
   int i = 0, len = v7_array_length(v7, obj);
-  val_t *arr = (val_t *) malloc(len * sizeof(arr[0]));
+  val_t *arr = (val_t *) V7_MALLOC(len * sizeof(arr[0]));
   val_t arg0 = v7_array_get(v7, args, 0);
 
   if (!v7_is_object(obj)) return obj;
@@ -3670,7 +3641,7 @@ static val_t a_sort(struct v7 *v7, val_t obj, val_t args,
     v7_array_set(v7, obj, i, arr[len - (i + 1)]);
   }
 
-  free(arr);
+  v7_FREE(arr);
 
   return obj;
 }
@@ -3714,12 +3685,12 @@ static val_t Array_join(struct v7 *v7, val_t this_obj, val_t args) {
       p = buf;
       n = to_str(v7, v7_array_get(v7, this_obj, i), buf, sizeof(buf), 0);
       if (n > (long) sizeof(buf)) {
-        p = (char *) malloc(n + 1);
+        p = (char *) V7_MALLOC(n + 1);
         to_str(v7, v7_array_get(v7, this_obj, i), p, n, 0);
       }
       mbuf_append(&m, p, n);
       if (p != buf) {
-        free(p);
+        v7_FREE(p);
       }
     }
 
@@ -4053,12 +4024,6 @@ static val_t m_two_arg(struct v7 *v7, val_t args, double (*f)(double, double)) {
     return func(v7, args, name);                                            \
   }
 
-/* Visual studio 2012+ has round() */
-#if (defined(V7_WINDOWS) && _MSC_VER < 1700) || defined(__WATCOM__)
-static double round(double n) {
-  return n;
-}
-#endif
 
 DEFINE_WRAPPER(fabs, m_one_arg)
 DEFINE_WRAPPER(acos, m_one_arg)
@@ -5649,7 +5614,7 @@ v7_val_t v7_create_regexp(struct v7 *v7, const char *re, size_t re_len,
     throw_exception(v7, TYPE_ERROR, "Invalid regex");
     return V7_UNDEFINED;
   } else {
-    rp = (struct v7_regexp *) malloc(sizeof(*rp));
+    rp = (struct v7_regexp *) V7_MALLOC(sizeof(*rp));
     rp->regexp_string = v7_create_string(v7, re, re_len, 1);
     rp->compiled_regexp = p;
     rp->lastIndex = 0;
@@ -5913,7 +5878,7 @@ char *v7_to_json(struct v7 *v7, val_t v, char *buf, size_t size) {
 
   if (len > (int) size) {
     /* Buffer is not large enough. Allocate a bigger one */
-    char *p = (char *) malloc(len + 1);
+    char *p = (char *) V7_MALLOC(len + 1);
     to_str(v7, v, p, len + 1, 1);
     p[len] = '\0';
     return p;
@@ -6320,7 +6285,7 @@ int v7_array_set(struct v7 *v7, val_t arr, unsigned long index, val_t v) {
       }
 
       if (abuf == NULL) {
-        abuf = (struct mbuf *) malloc(sizeof(*abuf));
+        abuf = (struct mbuf *) V7_MALLOC(sizeof(*abuf));
         mbuf_init(abuf, sizeof(val_t) * (index + 1));
         p->value = v7_create_foreign(abuf);
       }
@@ -6508,7 +6473,7 @@ V7_PRIVATE val_t to_string(struct v7 *v7, val_t v) {
   }
   res = v7_create_string(v7, s, strlen(s), 1);
   if (p != buf) {
-    free(p);
+    v7_FREE(p);
   }
 
   return res;
@@ -6676,7 +6641,7 @@ static void object_destructor(struct v7 *v7, void *ptr) {
     if (p != NULL &&
         ((abuf = (struct mbuf *) v7_to_foreign(p->value)) != NULL)) {
       mbuf_free(abuf);
-      free(abuf);
+      v7_FREE(abuf);
     }
   }
 }
@@ -6697,9 +6662,9 @@ struct v7 *v7_create(void) {
   _v7_nan = zero / zero;
 #endif
 
-  if ((v7 = (struct v7 *) calloc(1, sizeof(*v7))) != NULL) {
+  if ((v7 = (struct v7 *) V7_CALLOC(1, sizeof(*v7))) != NULL) {
     v7->cur_dense_prop =
-        (struct v7_property *) calloc(1, sizeof(struct v7_property));
+        (struct v7_property *) V7_CALLOC(1, sizeof(struct v7_property));
 #define GC_SIZE (64 * 10)
     gc_arena_init(v7, &v7->object_arena, sizeof(struct v7_object), GC_SIZE,
                   "object");
@@ -6751,8 +6716,8 @@ void v7_destroy(struct v7 *v7) {
     gc_arena_destroy(v7, &v7->function_arena);
     gc_arena_destroy(v7, &v7->property_arena);
 
-    free(v7->cur_dense_prop);
-    free(v7);
+    v7_FREE(v7->cur_dense_prop);
+    v7_FREE(v7);
   }
 }
 /*
@@ -6818,7 +6783,7 @@ V7_PRIVATE void gc_arena_destroy(struct v7 *v7, struct gc_arena *a) {
     if (a->destructor != NULL) {
       gc_sweep(v7, a, 0);
     }
-    free(a->base);
+    v7_FREE(a->base);
   }
 }
 
@@ -6838,7 +6803,7 @@ V7_PRIVATE void gc_arena_grow(struct v7 *v7, struct gc_arena *a,
   size_t old_size = a->size;
   uint32_t old_alive = a->alive;
   a->size = new_size;
-  a->base = (char *) realloc(a->base, a->size * a->cell_size);
+  a->base = (char *) V7_REALLOC(a->base, a->size * a->cell_size);
   memset(a->base + old_size * a->cell_size, 0,
          (a->size - old_size) * a->cell_size);
   /* in case we grow preemptively */
@@ -6851,7 +6816,7 @@ V7_PRIVATE void gc_arena_grow(struct v7 *v7, struct gc_arena *a,
 V7_PRIVATE void *gc_alloc_cell(struct v7 *v7, struct gc_arena *a) {
 #ifdef V7_DISABLE_GC
   (void) v7;
-  return calloc(1, a->cell_size);
+  return V7_CALLOC(1, a->cell_size);
 #else
   char **r;
   if (a->free == NULL) {
@@ -8125,13 +8090,6 @@ static double i_int_bin_op(struct v7 *v7, enum ast_tag tag, double a,
   }
 }
 
-/* Visual studio 2012+ has signbit() */
-#if defined(V7_WINDOWS) && _MSC_VER < 1700
-static int signbit(double x) {
-  double s = _copysign(1, x);
-  return s < 0;
-}
-#endif
 
 static double i_num_bin_op(struct v7 *v7, enum ast_tag tag, double a,
                            double b) {
@@ -9577,7 +9535,7 @@ cleanup:
 
 enum v7_err v7_exec_with(struct v7 *v7, val_t *res, const char *src, val_t w) {
   /* TODO(mkm): use GC pool */
-  struct ast *a = (struct ast *) malloc(sizeof(struct ast));
+  struct ast *a = (struct ast *) V7_MALLOC(sizeof(struct ast));
   val_t old_this = v7->this_object;
   enum i_break brk = B_RUN;
   ast_off_t pos = 0;
@@ -9640,7 +9598,7 @@ enum v7_err v7_exec_file(struct v7 *v7, val_t *res, const char *path) {
              strerror(errno));
     *res = create_exception(v7, SYNTAX_ERROR, v7->error_msg);
     fclose(fp);
-  } else if ((p = (char *) calloc(1, (size_t) file_size + 1)) == NULL) {
+  } else if ((p = (char *) V7_CALLOC(1, (size_t) file_size + 1)) == NULL) {
     snprintf(v7->error_msg, sizeof(v7->error_msg), "cannot allocate %ld bytes",
              file_size + 1);
     fclose(fp);
@@ -9652,7 +9610,7 @@ enum v7_err v7_exec_file(struct v7 *v7, val_t *res, const char *path) {
     fclose(fp);
     err = v7_exec(v7, res, p);
   cleanup:
-    free(p);
+    v7_FREE(p);
   }
 
   return err;
@@ -9679,16 +9637,18 @@ enum v7_err v7_exec_file(struct v7 *v7, val_t *res, const char *path) {
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <ctype.h>
 
+#include "v7_cfg.h"
 
 /* Limitations */
 #define SLRE_MAX_RANGES 32
 #define SLRE_MAX_SETS 16
 #define SLRE_MAX_REP 0xFFFF
 
+#ifndef SLRE_MALLOC
 #define SLRE_MALLOC malloc
 #define SLRE_FREE free
+#endif
 #define SLRE_THROW(e, err_code) longjmp((e)->jmp_buf, (err_code))
 
 static int hex(int c) {
@@ -11514,7 +11474,7 @@ static enum v7_err Obj_toString(struct v7_c_func_arg *cfa) {
   char *p, buf[500];
   p = v7_stringify(cfa->this_obj, buf, sizeof(buf));
   v7_push_string(cfa->v7, p, strlen(p), 1);
-  if (p != buf) free(p);
+  if (p != buf) v7_FREE(p);
   return V7_OK;
 }
 
@@ -11770,7 +11730,7 @@ static val_t Json_stringify(struct v7 *v7, val_t this_obj, val_t args) {
   char buf[100], *p = v7_to_json(v7, arg0, buf, sizeof(buf));
   val_t res = v7_create_string(v7, p, strlen(p), 1);
   (void) this_obj;
-  if (p != buf) free(p);
+  if (p != buf) v7_FREE(p);
   return res;
 }
 
@@ -11809,7 +11769,7 @@ static char *read_file(const char *path, size_t *size) {
   char *data = NULL;
   if ((fp = fopen(path, "rb")) != NULL && !fstat(fileno(fp), &st)) {
     *size = st.st_size;
-    data = (char *) malloc(*size + 1);
+    data = (char *) V7_MALLOC(*size + 1);
     if (data != NULL) {
       fread(data, 1, *size, fp);
       data[*size] = '\0';
@@ -11838,7 +11798,7 @@ static void print_error(struct v7 *v7, const char *f, val_t e) {
   char *s = v7_to_json(v7, e, buf, sizeof(buf));
   fprintf(stderr, "Exec error [%s]: %s\n", f, s);
   if (s != buf) {
-    free(s);
+    v7_FREE(s);
   }
 }
 
@@ -11880,7 +11840,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Cannot read [%s]\n", argv[i]);
       } else {
         dump_ast(v7, source_code, binary_ast);
-        free(source_code);
+        v7_FREE(source_code);
       }
     } else if (v7_exec_file(v7, &res, argv[i]) != V7_OK) {
       print_error(v7, argv[i], res);
@@ -12986,7 +12946,7 @@ V7_PRIVATE v7_val_t Std_print(struct v7 *v7, val_t this_obj, val_t args) {
       p = v7_to_json(v7, arg, buf, sizeof(buf));
       printf("%s", p);
       if (p != buf) {
-        free(p);
+        v7_FREE(p);
       }
     }
   }
@@ -13008,7 +12968,7 @@ V7_PRIVATE val_t Std_eval(struct v7 *v7, val_t t, val_t args) {
       throw_value(v7, res);
     }
     if (p != buf) {
-      free(p);
+      v7_FREE(p);
     }
   }
   return res;
@@ -13097,11 +13057,11 @@ static val_t b64_transform(struct v7 *v7, val_t this_obj, val_t args,
   if (v7_is_string(arg0)) {
     size_t n;
     const char *s = v7_to_string(v7, &arg0, &n);
-    char *buf = (char *) malloc(n * mult + 2);
+    char *buf = (char *) V7_MALLOC(n * mult + 2);
     if (buf != NULL) {
       func((const unsigned char *) s, (int) n, buf);
       res = v7_create_string(v7, buf, strlen(buf), 1);
-      free(buf);
+      v7_FREE(buf);
     }
   }
 
@@ -13287,7 +13247,7 @@ V7_PRIVATE val_t Regex_ctor(struct v7 *v7, val_t this_obj, val_t args) {
       throw_exception(v7, TYPE_ERROR, "Invalid regex");
       return v7_create_undefined();
     } else {
-      rp = (struct v7_regexp *) malloc(sizeof(*rp));
+      rp = (struct v7_regexp *) V7_MALLOC(sizeof(*rp));
       rp->regexp_string = v7_create_string(v7, re, re_len, 1);
       rp->compiled_regexp = p;
       rp->lastIndex = 0;
@@ -13546,7 +13506,7 @@ static v7_val_t Socket_ctor(struct v7 *v7, val_t this_obj, val_t args) {
   if (si.socket >= 0) {
     val_t si_val;
     struct socket_internal *psi =
-        (struct socket_internal *) malloc(sizeof(*psi));
+        (struct socket_internal *) V7_MALLOC(sizeof(*psi));
     memcpy(psi, &si, sizeof(*psi));
 
     si_val = v7_create_foreign(psi);
@@ -13750,7 +13710,7 @@ static uint8_t *Socket_JSarray_to_Carray(struct v7 *v7, val_t arr,
   unsigned long i, elem_count = v7_array_length(v7, arr);
   /* Support byte array only */
   *buf_size = elem_count * sizeof(uint8_t);
-  retval = ptr = (uint8_t *) malloc(*buf_size);
+  retval = ptr = (uint8_t *) V7_MALLOC(*buf_size);
 
   for (i = 0; i < elem_count; i++) {
     double elem = i_as_num(v7, v7_array_get(v7, arr, i));
@@ -13762,7 +13722,7 @@ static uint8_t *Socket_JSarray_to_Carray(struct v7 *v7, val_t arr,
   }
 
   if (i != elem_count) {
-    free(retval);
+    v7_FREE(retval);
     return NULL;
   }
 
@@ -13816,7 +13776,7 @@ static v7_val_t Socket_send(struct v7 *v7, val_t this_obj, val_t args) {
   }
 
   if (free_buf) {
-    free(buf);
+    v7_FREE(buf);
   }
 
   if (buf_size != 0) {
@@ -13870,7 +13830,7 @@ static v7_val_t Socket_close(struct v7 *v7, val_t this_obj, val_t args) {
   }
 
   close(si->socket);
-  free(si);
+  v7_FREE(si);
 
   v7_set_property(v7, this_obj, "", 0, V7_PROPERTY_HIDDEN,
                   v7_create_undefined());
@@ -13920,7 +13880,7 @@ static v7_val_t Socket_sendto(struct v7 *v7, val_t this_obj, val_t args) {
   }
 
   if (free_buf) {
-    free(buf);
+    v7_FREE(buf);
   }
 
   if (buf_size != 0) {
@@ -14102,7 +14062,7 @@ static v7_val_t Socket_accept(struct v7 *v7, val_t this_obj, val_t args) {
   v7_to_object(ret_sock)->prototype = v7_to_object(v7->socket_prototype);
 
   if (new_sock >= 0) {
-    new_si = (struct socket_internal *) malloc(sizeof(*new_si));
+    new_si = (struct socket_internal *) V7_MALLOC(sizeof(*new_si));
 
     new_si->socket = new_sock;
     new_si->family = si->family;

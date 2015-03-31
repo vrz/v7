@@ -1082,7 +1082,7 @@ static char *read_file(const char *path, size_t *size) {
   char *data = NULL;
   if ((fp = fopen(path, "rb")) != NULL && !fstat(fileno(fp), &st)) {
     *size = st.st_size;
-    data = (char *) malloc(*size + 1);
+    data = (char *) V7_MALLOC(*size + 1);
     if (data != NULL) {
       if (fread(data, 1, *size, fp) < *size) {
         if (ferror(fp) == 0) return NULL;
@@ -1155,7 +1155,7 @@ static const char *test_ecmac(void) {
         char buf[2048], *err_str = v7_to_json(v7, res, buf, sizeof(buf));
         fprintf(r, "%i\tFAIL %s: [%s]\n", i, tail_cmd, err_str);
         if (err_str != buf) {
-          free(err_str);
+          v7_FREE(err_str);
         }
       } else {
         passed++;
@@ -1167,7 +1167,7 @@ static const char *test_ecmac(void) {
   printf("ECMA tests coverage: %.2lf%% (%d of %d)\n",
          (double) passed / i * 100.0, passed, i);
 
-  free(db);
+  v7_FREE(db);
   fclose(r);
   rename(".ecma_report.txt", "ecma_report.txt");
   return NULL;
@@ -1973,7 +1973,7 @@ static const char *test_to_json(void) {
 #if 0
   ASSERT((p = v7_to_json(v7, v, buf, 3)) != buf);
   ASSERT(strcmp(p, "123.45") == 0);
-  free(p);
+  v7_FREE(p);
 #endif
 
   v7_destroy(v7);
@@ -2100,7 +2100,7 @@ static const char *test_file(void) {
   s = v7_to_string(v7, &v, &string_len);
   ASSERT(string_len == file_len);
   ASSERT(memcmp(s, file_data, string_len) == 0);
-  free(file_data);
+  v7_FREE(file_data);
   ASSERT(v7_exec(v7, &v, "OS.close(fd)") == V7_OK);
   ASSERT(check_value(v7, v, "0"));
 
@@ -2115,7 +2115,7 @@ static const char *test_file(void) {
   ASSERT((file_data = read_file("foo.txt", &file_len)) != NULL);
   ASSERT(file_len == 8);
   ASSERT(memcmp(file_data, "hi there", 8) == 0);
-  free(file_data);
+  v7_FREE(file_data);
   ASSERT(v7_exec(v7, &v, "OS.remove('foo.txt')") == V7_OK);
   ASSERT(check_value(v7, v, "0"));
   ASSERT(fopen("foo.txt", "r") == NULL);

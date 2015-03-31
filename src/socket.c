@@ -117,7 +117,7 @@ static v7_val_t Socket_ctor(struct v7 *v7, val_t this_obj, val_t args) {
   if (si.socket >= 0) {
     val_t si_val;
     struct socket_internal *psi =
-        (struct socket_internal *) malloc(sizeof(*psi));
+        (struct socket_internal *) V7_MALLOC(sizeof(*psi));
     memcpy(psi, &si, sizeof(*psi));
 
     si_val = v7_create_foreign(psi);
@@ -321,7 +321,7 @@ static uint8_t *Socket_JSarray_to_Carray(struct v7 *v7, val_t arr,
   unsigned long i, elem_count = v7_array_length(v7, arr);
   /* Support byte array only */
   *buf_size = elem_count * sizeof(uint8_t);
-  retval = ptr = (uint8_t *) malloc(*buf_size);
+  retval = ptr = (uint8_t *) V7_MALLOC(*buf_size);
 
   for (i = 0; i < elem_count; i++) {
     double elem = i_as_num(v7, v7_array_get(v7, arr, i));
@@ -333,7 +333,7 @@ static uint8_t *Socket_JSarray_to_Carray(struct v7 *v7, val_t arr,
   }
 
   if (i != elem_count) {
-    free(retval);
+    v7_FREE(retval);
     return NULL;
   }
 
@@ -387,7 +387,7 @@ static v7_val_t Socket_send(struct v7 *v7, val_t this_obj, val_t args) {
   }
 
   if (free_buf) {
-    free(buf);
+    v7_FREE(buf);
   }
 
   if (buf_size != 0) {
@@ -441,7 +441,7 @@ static v7_val_t Socket_close(struct v7 *v7, val_t this_obj, val_t args) {
   }
 
   close(si->socket);
-  free(si);
+  v7_FREE(si);
 
   v7_set_property(v7, this_obj, "", 0, V7_PROPERTY_HIDDEN,
                   v7_create_undefined());
@@ -491,7 +491,7 @@ static v7_val_t Socket_sendto(struct v7 *v7, val_t this_obj, val_t args) {
   }
 
   if (free_buf) {
-    free(buf);
+    v7_FREE(buf);
   }
 
   if (buf_size != 0) {
@@ -673,7 +673,7 @@ static v7_val_t Socket_accept(struct v7 *v7, val_t this_obj, val_t args) {
   v7_to_object(ret_sock)->prototype = v7_to_object(v7->socket_prototype);
 
   if (new_sock >= 0) {
-    new_si = (struct socket_internal *) malloc(sizeof(*new_si));
+    new_si = (struct socket_internal *) V7_MALLOC(sizeof(*new_si));
 
     new_si->socket = new_sock;
     new_si->family = si->family;

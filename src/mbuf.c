@@ -15,7 +15,7 @@ V7_PRIVATE void mbuf_init(struct mbuf *mbuf, size_t initial_size) {
 /* Frees the space allocated for the iobuffer and resets the iobuf structure. */
 V7_PRIVATE void mbuf_free(struct mbuf *mbuf) {
   if (mbuf->buf != NULL) {
-    free(mbuf->buf);
+    v7_FREE(mbuf->buf);
     mbuf_init(mbuf, 0);
   }
 }
@@ -29,7 +29,7 @@ V7_PRIVATE void mbuf_free(struct mbuf *mbuf) {
 V7_PRIVATE void mbuf_resize(struct mbuf *a, size_t new_size) {
   char *p;
   if ((new_size > a->size || (new_size < a->size && new_size >= a->len)) &&
-      (p = (char *) realloc(a->buf, new_size)) != NULL) {
+      (p = (char *) V7_REALLOC(a->buf, new_size)) != NULL) {
     a->size = new_size;
     a->buf = p;
   }
@@ -73,7 +73,7 @@ mbuf_insert(struct mbuf *a, size_t off, const char *buf, size_t len) {
       memcpy(a->buf + off, buf, len);
     }
     a->len += len;
-  } else if ((p = (char *) realloc(
+  } else if ((p = (char *) V7_REALLOC(
                   a->buf, (a->len + len) * MBUF_SIZE_MULTIPLIER)) != NULL) {
     a->buf = p;
     memmove(a->buf + off + len, a->buf + off, a->len - off);

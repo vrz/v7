@@ -28,7 +28,7 @@ V7_PRIVATE val_t Regex_ctor(struct v7 *v7, val_t this_obj, val_t args) {
       throw_exception(v7, TYPE_ERROR, "Invalid regex");
       return v7_create_undefined();
     } else {
-      rp = (struct v7_regexp *) malloc(sizeof(*rp));
+      rp = (struct v7_regexp *) V7_MALLOC(sizeof(*rp));
       rp->regexp_string = v7_create_string(v7, re, re_len, 1);
       rp->compiled_regexp = p;
       rp->lastIndex = 0;

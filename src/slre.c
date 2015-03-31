@@ -20,8 +20,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <ctype.h>
 
+#include "v7_cfg.h"
 #include "utf.h"
 #include "slre.h"
 
@@ -30,8 +30,10 @@
 #define SLRE_MAX_SETS 16
 #define SLRE_MAX_REP 0xFFFF
 
+#ifndef SLRE_MALLOC
 #define SLRE_MALLOC malloc
 #define SLRE_FREE free
+#endif
 #define SLRE_THROW(e, err_code) longjmp((e)->jmp_buf, (err_code))
 
 static int hex(int c) {

@@ -29,25 +29,25 @@ run:
 	@$(MAKE) -C tests compile test_c99
 
 v7: $(TOP_HEADERS) $(TOP_SOURCES) v7.h
-	$(CC) $(TOP_SOURCES) -o $@ -DV7_EXE -DV7_EXPOSE_PRIVATE $(CFLAGS) -lm
+	$(CC) $(TOP_SOURCES) -o $@ $(CFLAGS) -lm
 
 asan_v7:
-	@$(CLANG) -fsanitize=address -fcolor-diagnostics -fno-common $(TOP_SOURCES) -o v7 -DV7_EXE -DV7_EXPOSE_PRIVATE $(CFLAGS) -lm
+	@$(CLANG) -fsanitize=address -fcolor-diagnostics -fno-common $(TOP_SOURCES) -o v7 $(CFLAGS) -lm
 	@ASAN_SYMBOLIZER_PATH=$(LLVM_SYMBOLIZER) ASAN_OPTIONS=symbolize=1,detect_stack_use_after_return=1,strict_init_order=1 ./v7 $(V7_ARGS)
 
 msan_v7:
-	@$(CLANG) -fsanitize=memory -fcolor-diagnostics -fno-common -fsanitize-memory-track-origins $(TOP_SOURCES) -o v7 -DV7_EXE -DV7_EXPOSE_PRIVATE $(CFLAGS) -lm
+	@$(CLANG) -fsanitize=memory -fcolor-diagnostics -fno-common -fsanitize-memory-track-origins $(TOP_SOURCES) -o v7 $(CFLAGS) -lm
 	@ASAN_SYMBOLIZER_PATH=$(LLVM_SYMBOLIZER) ASAN_OPTIONS=symbolize=1 ./v7 $(V7_ARGS)
 
 amalgamated_v7: v7.h v7.c
-	$(CC) v7.c -o $@ -DV7_EXE -DV7_EXPOSE_PRIVATE $(CFLAGS) -lm
+	$(CC) v7.c -o $@ $(CFLAGS) -lm
 
 m32_v7: $(TOP_HEADERS) $(TOP_SOURCES) v7.h
-	$(CC) $(TOP_SOURCES) -o v7 -DV7_EXE -DV7_EXPOSE_PRIVATE $(CFLAGS) -m32 -lm
+	$(CC) $(TOP_SOURCES) -o v7 $(CFLAGS) -m32 -lm
 
 w: v7.c
-	wine cl v7.c /Zi -DV7_EXE -DV7_EXPOSE_PRIVATE $(DEFS_WINDOWS)
-	wine cl tests/unit_test.c $(TOP_SOURCES) $(V7_FLAGS) $(DEFS_WINDOWS) /Zi -DV7_EXPOSE_PRIVATE
+	wine cl v7.c /Zi $(DEFS_WINDOWS)
+	wine cl tests/unit_test.c $(TOP_SOURCES) $(V7_FLAGS) $(DEFS_WINDOWS) /Zi
 
 clean:
 	@$(MAKE) -C tests clean

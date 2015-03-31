@@ -139,13 +139,6 @@ static double i_int_bin_op(struct v7 *v7, enum ast_tag tag, double a,
   }
 }
 
-/* Visual studio 2012+ has signbit() */
-#if defined(V7_WINDOWS) && _MSC_VER < 1700
-static int signbit(double x) {
-  double s = _copysign(1, x);
-  return s < 0;
-}
-#endif
 
 static double i_num_bin_op(struct v7 *v7, enum ast_tag tag, double a,
                            double b) {
@@ -1591,7 +1584,7 @@ cleanup:
 
 enum v7_err v7_exec_with(struct v7 *v7, val_t *res, const char *src, val_t w) {
   /* TODO(mkm): use GC pool */
-  struct ast *a = (struct ast *) malloc(sizeof(struct ast));
+  struct ast *a = (struct ast *) V7_MALLOC(sizeof(struct ast));
   val_t old_this = v7->this_object;
   enum i_break brk = B_RUN;
   ast_off_t pos = 0;
@@ -1654,7 +1647,7 @@ enum v7_err v7_exec_file(struct v7 *v7, val_t *res, const char *path) {
              strerror(errno));
     *res = create_exception(v7, SYNTAX_ERROR, v7->error_msg);
     fclose(fp);
-  } else if ((p = (char *) calloc(1, (size_t) file_size + 1)) == NULL) {
+  } else if ((p = (char *) V7_CALLOC(1, (size_t) file_size + 1)) == NULL) {
     snprintf(v7->error_msg, sizeof(v7->error_msg), "cannot allocate %ld bytes",
              file_size + 1);
     fclose(fp);
@@ -1666,7 +1659,7 @@ enum v7_err v7_exec_file(struct v7 *v7, val_t *res, const char *path) {
     fclose(fp);
     err = v7_exec(v7, res, p);
   cleanup:
-    free(p);
+    v7_FREE(p);
   }
 
   return err;
