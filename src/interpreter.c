@@ -826,11 +826,9 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
     default: {
 #ifndef V7_DISABLE_AST_TAG_NAMES
       const struct ast_node_def *def = &ast_node_defs[tag];
-      throw_exception(v7, INTERNAL_ERROR, "%s: %s", __func__,
-                      def->name); /* LCOV_EXCL_LINE */
+      throw_exception(v7, INTERNAL_ERROR, "%s", def->name); /* LCOV_EXCL_LINE */
 #else
-      throw_exception(v7, INTERNAL_ERROR, "%s: TAG_%d", __func__,
-                      tag); /* LCOV_EXCL_LINE */
+      throw_exception(v7, INTERNAL_ERROR, "TAG_%d", tag); /* LCOV_EXCL_LINE */
 #endif
       /* unreacheable */
       break;
@@ -909,6 +907,7 @@ V7_PRIVATE val_t i_prepare_call(struct v7 *v7, struct v7_function *func,
   val_t frame;
   enum ast_tag tag;
   ast_off_t fstart, fvar;
+  struct gc_tmp_frame tf = new_tmp_frame(v7);
 
   *pos = func->ast_off;
   fstart = *pos;
@@ -923,7 +922,9 @@ V7_PRIVATE val_t i_prepare_call(struct v7 *v7, struct v7_function *func,
   frame = v7_create_object(v7);
   v7_to_object(frame)->prototype = func->scope;
 
+  tmp_stack_push(&tf, &frame);
   i_populate_local_vars(v7, func->ast, fstart, fvar, frame);
+  tmp_frame_cleanup(&tf);
   return frame;
 }
 

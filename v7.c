@@ -906,12 +906,19 @@ struct v7 {
 #define V7_STATIC_ASSERT(COND, MSG) \
   typedef char static_assertion_##MSG[2 * (!!(COND)) - 1]
 
+#ifndef NDEBUG
 #define V7_CHECK(v7, COND)                                            \
   do {                                                                \
     if (!(COND))                                                      \
       throw_exception(v7, INTERNAL_ERROR, "%s line %d: %s", __func__, \
                       __LINE__, #COND);                               \
   } while (0)
+#else
+#define V7_CHECK(v7, COND)                                                 \
+  do {                                                                     \
+    if (!(COND)) throw_exception(v7, INTERNAL_ERROR, "line %d", __LINE__); \
+  } while (0)
+#endif
 
 #define TRACE_VAL(v7, val)                                     \
   do {                                                         \
@@ -1097,7 +1104,9 @@ V7_PRIVATE v7_val_t
 v7_create_cfunction_ctor(struct v7 *, val_t, v7_cfunction_t, int);
 
 V7_PRIVATE int set_cfunc_obj_prop(struct v7 *, val_t obj, const char *name,
-                                  v7_cfunction_t f, int num_args);
+                                  v7_cfunction_t f);
+V7_PRIVATE int set_cfunc_obj_prop_n(struct v7 *, val_t obj, const char *name,
+                                    v7_cfunction_t f, int num_args);
 
 V7_PRIVATE val_t v_get_prototype(struct v7 *, val_t);
 V7_PRIVATE int is_prototype_of(struct v7 *, val_t, val_t);
@@ -3933,17 +3942,17 @@ V7_PRIVATE void init_array(struct v7 *v7) {
   v7_set_property(v7, ctor, "prototype", 9, 0, v7->array_prototype);
   v7_set_property(v7, v7->global_object, "Array", 5, 0, ctor);
 
-  set_cfunc_obj_prop(v7, v7->array_prototype, "push", Array_push, 1);
-  set_cfunc_obj_prop(v7, v7->array_prototype, "sort", Array_sort, 1);
-  set_cfunc_obj_prop(v7, v7->array_prototype, "reverse", Array_reverse, 0);
-  set_cfunc_obj_prop(v7, v7->array_prototype, "join", Array_join, 1);
-  set_cfunc_obj_prop(v7, v7->array_prototype, "toString", Array_toString, 0);
-  set_cfunc_obj_prop(v7, v7->array_prototype, "slice", Array_slice, 2);
-  set_cfunc_obj_prop(v7, v7->array_prototype, "splice", Array_splice, 2);
-  set_cfunc_obj_prop(v7, v7->array_prototype, "map", Array_map, 1);
-  set_cfunc_obj_prop(v7, v7->array_prototype, "every", Array_every, 1);
-  set_cfunc_obj_prop(v7, v7->array_prototype, "some", Array_some, 1);
-  set_cfunc_obj_prop(v7, v7->array_prototype, "filter", Array_filter, 1);
+  set_cfunc_obj_prop_n(v7, v7->array_prototype, "push", Array_push, 1);
+  set_cfunc_obj_prop_n(v7, v7->array_prototype, "sort", Array_sort, 1);
+  set_cfunc_obj_prop_n(v7, v7->array_prototype, "reverse", Array_reverse, 0);
+  set_cfunc_obj_prop_n(v7, v7->array_prototype, "join", Array_join, 1);
+  set_cfunc_obj_prop_n(v7, v7->array_prototype, "toString", Array_toString, 0);
+  set_cfunc_obj_prop_n(v7, v7->array_prototype, "slice", Array_slice, 2);
+  set_cfunc_obj_prop_n(v7, v7->array_prototype, "splice", Array_splice, 2);
+  set_cfunc_obj_prop_n(v7, v7->array_prototype, "map", Array_map, 1);
+  set_cfunc_obj_prop_n(v7, v7->array_prototype, "every", Array_every, 1);
+  set_cfunc_obj_prop_n(v7, v7->array_prototype, "some", Array_some, 1);
+  set_cfunc_obj_prop_n(v7, v7->array_prototype, "filter", Array_filter, 1);
 
   v7_array_set(v7, length, 0, v7_create_cfunction(Array_get_length));
   v7_array_set(v7, length, 1, v7_create_cfunction(Array_set_length));
@@ -6155,17 +6164,19 @@ v7_create_cfunction_object(struct v7 *v7, v7_cfunction_t f, int num_args) {
   struct gc_tmp_frame tf = new_tmp_frame(v7);
   tmp_stack_push(&tf, &obj);
   v7_set_property(v7, obj, "", 0, V7_PROPERTY_HIDDEN, v7_create_cfunction(f));
+  if (num_args >= 0) {
 #ifndef V7_DISABLE_PREDEFINED_STRINGS
-  v7_set_property_v(
-      v7, obj, v7->predefined_strings[PREDEFINED_STR_LENGTH],
-      V7_PROPERTY_READ_ONLY | V7_PROPERTY_DONT_ENUM | V7_PROPERTY_DONT_DELETE,
-      v7_create_number(num_args));
+    v7_set_property_v(
+        v7, obj, v7->predefined_strings[PREDEFINED_STR_LENGTH],
+        V7_PROPERTY_READ_ONLY | V7_PROPERTY_DONT_ENUM | V7_PROPERTY_DONT_DELETE,
+        v7_create_number(num_args));
 #else
-  v7_set_property(
-      v7, obj, "length", 6,
-      V7_PROPERTY_READ_ONLY | V7_PROPERTY_DONT_ENUM | V7_PROPERTY_DONT_DELETE,
-      v7_create_number(num_args));
+    v7_set_property(
+        v7, obj, "length", 6,
+        V7_PROPERTY_READ_ONLY | V7_PROPERTY_DONT_ENUM | V7_PROPERTY_DONT_DELETE,
+        v7_create_number(num_args));
 #endif
+  }
   tmp_frame_cleanup(&tf);
   return obj;
 }
@@ -6194,6 +6205,12 @@ V7_PRIVATE v7_val_t v7_create_cfunction_ctor(struct v7 *v7, val_t proto,
 }
 
 V7_PRIVATE int set_cfunc_obj_prop(struct v7 *v7, val_t o, const char *name,
+                                  v7_cfunction_t f) {
+  return v7_set_property(v7, o, name, strlen(name), V7_PROPERTY_DONT_ENUM,
+                         v7_create_cfunction_object(v7, f, -1));
+}
+
+V7_PRIVATE int set_cfunc_obj_prop_n(struct v7 *v7, val_t o, const char *name,
                                   v7_cfunction_t f, int num_args) {
   return v7_set_property(v7, o, name, strlen(name), V7_PROPERTY_DONT_ENUM,
                          v7_create_cfunction_object(v7, f, num_args));
@@ -8812,11 +8829,9 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
     default: {
 #ifndef V7_DISABLE_AST_TAG_NAMES
       const struct ast_node_def *def = &ast_node_defs[tag];
-      throw_exception(v7, INTERNAL_ERROR, "%s: %s", __func__,
-                      def->name); /* LCOV_EXCL_LINE */
+      throw_exception(v7, INTERNAL_ERROR, "%s", def->name); /* LCOV_EXCL_LINE */
 #else
-      throw_exception(v7, INTERNAL_ERROR, "%s: TAG_%d", __func__,
-                      tag); /* LCOV_EXCL_LINE */
+      throw_exception(v7, INTERNAL_ERROR, "TAG_%d", tag); /* LCOV_EXCL_LINE */
 #endif
       /* unreacheable */
       break;
@@ -8895,6 +8910,7 @@ V7_PRIVATE val_t i_prepare_call(struct v7 *v7, struct v7_function *func,
   val_t frame;
   enum ast_tag tag;
   ast_off_t fstart, fvar;
+  struct gc_tmp_frame tf = new_tmp_frame(v7);
 
   *pos = func->ast_off;
   fstart = *pos;
@@ -8909,7 +8925,9 @@ V7_PRIVATE val_t i_prepare_call(struct v7 *v7, struct v7_function *func,
   frame = v7_create_object(v7);
   v7_to_object(frame)->prototype = func->scope;
 
+  tmp_stack_push(&tf, &frame);
   i_populate_local_vars(v7, func->ast, fstart, fvar, frame);
+  tmp_frame_cleanup(&tf);
   return frame;
 }
 
@@ -11588,17 +11606,17 @@ V7_PRIVATE void init_object(struct v7 *v7) {
   v7_set(v7, object, "prototype", 9, v7->object_prototype);
   v7_set(v7, v7->object_prototype, "constructor", 11, object);
 
-  set_cfunc_obj_prop(v7, v7->object_prototype, "toString", Obj_toString, 0);
+  set_cfunc_obj_prop_n(v7, v7->object_prototype, "toString", Obj_toString, 0);
   set_cfunc_prop(v7, object, "getPrototypeOf", Obj_getPrototypeOf);
   set_cfunc_prop(v7, object, "getOwnPropertyDescriptor",
                  Obj_getOwnPropertyDescriptor);
-  set_cfunc_obj_prop(v7, object, "defineProperty", Obj_defineProperty, 3);
+  set_cfunc_obj_prop_n(v7, object, "defineProperty", Obj_defineProperty, 3);
   set_cfunc_prop(v7, object, "defineProperties", Obj_defineProperties);
   set_cfunc_prop(v7, object, "create", Obj_create);
   set_cfunc_prop(v7, object, "keys", Obj_keys);
   set_cfunc_prop(v7, object, "getOwnPropertyNames", Obj_getOwnPropertyNames);
-  set_cfunc_obj_prop(v7, object, "preventExtensions", Obj_preventExtensions, 1);
-  set_cfunc_obj_prop(v7, object, "isExtensible", Obj_isExtensible, 1);
+  set_cfunc_obj_prop_n(v7, object, "preventExtensions", Obj_preventExtensions, 1);
+  set_cfunc_obj_prop_n(v7, object, "isExtensible", Obj_isExtensible, 1);
 
   set_cfunc_prop(v7, v7->object_prototype, "propertyIsEnumerable",
                  Obj_propertyIsEnumerable);
@@ -11776,8 +11794,8 @@ static val_t Json_stringify(struct v7 *v7, val_t this_obj, val_t args) {
 
 V7_PRIVATE void init_json(struct v7 *v7) {
   val_t o = v7_create_object(v7);
-  set_cfunc_obj_prop(v7, o, "stringify", Json_stringify, 1);
-  set_cfunc_obj_prop(v7, o, "parse", Std_eval, 1);
+  set_cfunc_obj_prop_n(v7, o, "stringify", Json_stringify, 1);
+  set_cfunc_obj_prop_n(v7, o, "parse", Std_eval, 1);
   v7_set_property(v7, v7->global_object, "JSON", 4, V7_PROPERTY_DONT_ENUM, o);
 }
 /*
@@ -12961,7 +12979,7 @@ V7_PRIVATE void init_function(struct v7 *v7) {
   val_t ctor = v7_create_cfunction_object(v7, Function_ctor, 1);
   v7_set_property(v7, ctor, "prototype", 9, 0, v7->function_prototype);
   v7_set_property(v7, v7->global_object, "Function", 8, 0, ctor);
-  set_cfunc_obj_prop(v7, v7->function_prototype, "apply", Function_apply, 1);
+  set_cfunc_obj_prop_n(v7, v7->function_prototype, "apply", Function_apply, 1);
   v7_set_property(v7, v7->function_prototype, "length", 6, V7_PROPERTY_GETTER,
                   v7_create_cfunction(Function_length));
 }
@@ -14313,10 +14331,10 @@ V7_PRIVATE void init_os(struct v7 *v7) {
   val_t os_obj = v7_create_object(v7);
   v7_set_property(v7, v7->global_object, "OS", 2, 0, os_obj);
 #ifndef V7_NO_FS
-  set_cfunc_obj_prop(v7, os_obj, "open", OS_open, 2);
-  set_cfunc_obj_prop(v7, os_obj, "close", OS_close, 1);
-  set_cfunc_obj_prop(v7, os_obj, "read", OS_read, 1);
-  set_cfunc_obj_prop(v7, os_obj, "write", OS_write, 2);
-  set_cfunc_obj_prop(v7, os_obj, "remove", OS_remove, 1);
+  set_cfunc_obj_prop(v7, os_obj, "open", OS_open);
+  set_cfunc_obj_prop(v7, os_obj, "close", OS_close);
+  set_cfunc_obj_prop(v7, os_obj, "read", OS_read);
+  set_cfunc_obj_prop(v7, os_obj, "write", OS_write);
+  set_cfunc_obj_prop(v7, os_obj, "remove", OS_remove);
 #endif
 }
