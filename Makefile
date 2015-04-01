@@ -29,7 +29,7 @@ run:
 	@$(MAKE) -C tests compile test_c99
 
 v7: $(TOP_HEADERS) $(TOP_SOURCES) v7.h
-	$(CC) $(TOP_SOURCES) -o $@ -DV7_EXE -DV7_EXPOSE_PRIVATE -DV7_NO_POSIX $(CFLAGS) -lm
+	$(CC) $(TOP_SOURCES) -o $@ -DV7_EXE -DV7_EXPOSE_PRIVATE $(CFLAGS) -lm
 
 asan_v7:
 	@$(CLANG) -fsanitize=address -fcolor-diagnostics -fno-common $(TOP_SOURCES) -o v7 -DV7_EXE -DV7_EXPOSE_PRIVATE $(CFLAGS) -lm
