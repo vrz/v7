@@ -334,22 +334,24 @@ static void re_ex_num_overfl(struct slre_env *e) {
 
 static enum slre_opcode re_countrep(struct slre_env *e) {
   e->min_rep = 0;
-  while (e->src < e->src_end && !re_endofcount(e->curr_rune = *e->src++))
+  while (e->src < e->src_end && !re_endofcount(e->curr_rune = *e->src++)) {
     e->min_rep = e->min_rep * 10 + re_dec_digit(e, e->curr_rune);
-  if (e->min_rep >= SLRE_MAX_REP) re_ex_num_overfl(e);
+    if (e->min_rep >= SLRE_MAX_REP) re_ex_num_overfl(e);
+  }
 
   if (e->curr_rune != ',') {
     e->max_rep = e->min_rep;
     return L_COUNT;
   }
   e->max_rep = 0;
-  while (e->src < e->src_end && (e->curr_rune = *e->src++) != '}')
+  while (e->src < e->src_end && (e->curr_rune = *e->src++) != '}') {
     e->max_rep = e->max_rep * 10 + re_dec_digit(e, e->curr_rune);
+    if (e->max_rep >= SLRE_MAX_REP) re_ex_num_overfl(e);
+  }
   if (!e->max_rep) {
     e->max_rep = SLRE_MAX_REP;
     return L_COUNT;
   }
-  if (e->max_rep >= SLRE_MAX_REP) re_ex_num_overfl(e);
 
   return L_COUNT;
 }
@@ -1096,7 +1098,7 @@ static void program_print(struct slre_prog *prog) {
 #endif
 
 int slre_compile(const char *pat, size_t pat_len, const char *flags,
-                 size_t fl_len, struct slre_prog **pr, int is_regex) {
+                 volatile size_t fl_len, struct slre_prog **pr, int is_regex) {
   struct slre_env e;
   struct slre_node *nd;
   struct slre_instruction *split, *jump;
