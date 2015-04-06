@@ -135,6 +135,27 @@ int v7_main(int argc, char *argv[], void (*init_func)(struct v7 *));
 #define V7_ENABLE__Date__toJSON 1
 #define V7_ENABLE__Date__toLocaleString 1
 #define V7_ENABLE__Date__toString 1
+#define V7_ENABLE__Math 1
+#define V7_ENABLE__Math__abs 1
+#define V7_ENABLE__Math__acos 1
+#define V7_ENABLE__Math__asin 1
+#define V7_ENABLE__Math__atan 1
+#define V7_ENABLE__Math__atan2 1
+#define V7_ENABLE__Math__ceil 1
+#define V7_ENABLE__Math__cos 1
+#define V7_ENABLE__Math__exp 1
+#define V7_ENABLE__Math__floor 1
+#define V7_ENABLE__Math__log 1
+#define V7_ENABLE__Math__max 1
+#define V7_ENABLE__Math__min 1
+#define V7_ENABLE__Math__pow 1
+#define V7_ENABLE__Math__random 1
+#define V7_ENABLE__Math__round 1
+#define V7_ENABLE__Math__sin 1
+#define V7_ENABLE__Math__sqrt 1
+#define V7_ENABLE__Math__tan 1
+#define V7_ENABLE__RegExp 1
+#define V7_ENABLE__UTF 1
 
 #endif /* V7_BUILD_PROFILE == V7_BUILD_PROFILE_FULL */
 #if V7_BUILD_PROFILE == V7_BUILD_PROFILE_MEDIUM
@@ -142,6 +163,10 @@ int v7_main(int argc, char *argv[], void (*init_func)(struct v7 *));
 #define V7_ENABLE__Date 1
 #define V7_ENABLE__Date__now 1
 #define V7_ENABLE__Date__UTC 1
+#define V7_ENABLE__Math 1
+#define V7_ENABLE__Math__atan2 1
+#define V7_ENABLE__RegExp 1
+#define V7_ENABLE__UTF 1
 
 #endif /* V7_BUILD_PROFILE == V7_BUILD_PROFILE_MEDIUM */
 #if V7_BUILD_PROFILE == V7_BUILD_PROFILE_MINIMAL
@@ -210,33 +235,36 @@ int iswordchar(Rune c);
 int isalpharune(Rune c);
 int islowerrune(Rune c);
 int isspacerune(Rune c);
-int istitlerune(Rune c);
 int isupperrune(Rune c);
+int runetochar(char *str, Rune *rune);
+Rune tolowerrune(Rune c);
+Rune toupperrune(Rune c);
+int utfnlen(char *s, long m);
+char *utfnshift(char *s, long m);
+
+#if 0 /* Not implemented. */
+int istitlerune(Rune c);
 int runelen(Rune c);
 int runenlen(Rune *r, int nrune);
 Rune *runestrcat(Rune *s1, Rune *s2);
 Rune *runestrchr(Rune *s, Rune c);
-int runestrcmp(Rune *s1, Rune *s2);
 Rune *runestrcpy(Rune *s1, Rune *s2);
 Rune *runestrdup(Rune *s);
 Rune *runestrecpy(Rune *s1, Rune *es1, Rune *s2);
+int runestrcmp(Rune *s1, Rune *s2);
 long runestrlen(Rune *s);
 Rune *runestrncat(Rune *s1, Rune *s2, long n);
 int runestrncmp(Rune *s1, Rune *s2, long n);
 Rune *runestrncpy(Rune *s1, Rune *s2, long n);
 Rune *runestrrchr(Rune *s, Rune c);
 Rune *runestrstr(Rune *s1, Rune *s2);
-int runetochar(char *str, Rune *rune);
-Rune tolowerrune(Rune c);
 Rune totitlerune(Rune c);
-Rune toupperrune(Rune c);
 char *utfecpy(char *to, char *e, char *from);
 int utflen(char *s);
-int utfnlen(char *s, long m);
-char *utfnshift(char *s, long m);
 char *utfrrune(char *s, long c);
 char *utfrune(char *s, long c);
 char *utfutf(char *s1, char *s2);
+#endif
 
 #if defined(__cplusplus)
 }
@@ -1357,7 +1385,7 @@ enum slre_error {
   SLRE_BAD_CHAR_AFTER_USD
 };
 
-#ifndef V7_DISABLE_REGEX
+#if V7_ENABLE__RegExp
 
 #ifdef __cplusplus
 extern "C" {
@@ -1401,7 +1429,7 @@ int slre_get_flags(struct slre_prog *);
 }
 #endif /* __cplusplus */
 
-#endif /* V7_DISABLE_REGEX */
+#endif /* V7_ENABLE__RegExp */
 
 #endif /* SLRE_HEADER_INCLUDED */
 /*
@@ -1528,8 +1556,11 @@ mbuf_insert(struct mbuf *a, size_t off, const char *buf, size_t len) {
  * ANY REPRESENTATION OR WARRANTY OF ANY KIND CONCERNING THE MERCHANTABILITY
  * OF THIS SOFTWARE OR ITS FITNESS FOR ANY PARTICULAR PURPOSE.
  */
+#include <ctype.h>
 #include <stdarg.h>
 #include <string.h>
+
+#if V7_ENABLE__UTF
 
 enum
 {
@@ -1682,49 +1713,6 @@ runetochar(char *str, Rune *rune)
 	return 4; */
 }
 
-/* int
-runelen(long c)
-{
-	Rune rune;
-	char str[10];
-
-	rune = c;
-	return runetochar(str, &rune);
-} */
-int runelen(Rune c){
-	if(c <= Rune1)					return 1;
-	if(c <= Rune2)					return 2;
-	/* if(c <= Rune3 || c > Runemax) */	return 3;
-	/* return 4; */
-}
-
-/* int
-runenlen(Rune *r, int nrune)
-{
-	int nb, c;
-
-	nb = 0;
-	while(nrune--) {
-		c = *r++;
-		if(c <= Rune1)
-			nb++;
-		else
-		if(c <= Rune2)
-			nb += 2;
-		else
-		if(c <= Rune3 || c > Runemax)
-			nb += 3;
-		else
-			nb += 4;
-	}
-	return nb;
-} */
-int runenlen(Rune *r, int nrune){
-	int nb = 0;
-	while(nrune--) nb += runelen(*r++);
-	return nb;
-}
-
 int
 fullrune(char *str, int n)
 {
@@ -1786,125 +1774,6 @@ utfnshift(char *s, long m)
 	return s;
 }
 
-#if 0
-
-char*
-utfecpy(char *to, char *e, char *from)
-{
-	char *end;
-
-	if(to >= e)
-		return to;
-	end = memccpy(to, from, '\0', e - to);
-	if(end == NULL){
-		end = e-1;
-		while(end>to && (*--end&0xC0)==0x80)
-			;
-		*end = '\0';
-	}else{
-		end--;
-	}
-	return end;
-}
-
-int
-utflen(char *s)
-{
-	int c;
-	long n;
-	Rune rune;
-
-	n = 0;
-	for(;;) {
-		c = *(uchar*)s;
-		if(c < Runeself) {
-			if(c == 0)
-				return n;
-			s++;
-		} else
-			s += chartorune(&rune, s);
-		n++;
-	}
-}
-
-char*
-utfrrune(char *s, long c)
-{
-	long c1;
-	Rune r;
-	char *s1;
-
-	if(c < Runesync)		/* not part of utf sequence */
-		return strrchr(s, c);
-
-	s1 = 0;
-	for(;;) {
-		c1 = *(uchar*)s;
-		if(c1 < Runeself) {	/* one byte rune */
-			if(c1 == 0)
-				return s1;
-			if(c1 == c)
-				s1 = s;
-			s++;
-			continue;
-		}
-		c1 = chartorune(&r, s);
-		if(r == c)
-			s1 = s;
-		s += c1;
-	}
-}
-
-char*
-utfrune(char *s, long c)
-{
-	long c1;
-	Rune r;
-	int n;
-
-	if(c < Runesync)		/* not part of utf sequence */
-		return strchr(s, c);
-
-	for(;;) {
-		c1 = *(uchar*)s;
-		if(c1 < Runeself) {	/* one byte rune */
-			if(c1 == 0)
-				return 0;
-			if(c1 == c)
-				return s;
-			s++;
-			continue;
-		}
-		n = chartorune(&r, s);
-		if(r == c)
-			return s;
-		s += n;
-	}
-}
-
-/*
- * Return pointer to first occurrence of s2 in s1,
- * 0 if none
- */
-char*
-utfutf(char *s1, char *s2)
-{
-	char *p;
-	long f, n1, n2;
-	Rune r;
-
-	n1 = chartorune(&r, s2);
-	f = r;
-	if(f <= Runesync)		/* represents self */
-		return strstr(s1, s2);
-
-	n2 = strlen(s2);
-	for(p=s1; NULL != (p=utfrune(p, f)); p+=n1)
-		if(strncmp(p, s2, n2) == 0)
-			return p;
-	return 0;
-}
-#endif
 /*
  * The authors of this software are Rob Pike and Ken Thompson.
  *              Copyright (c) 2002 by Lucent Technologies.
@@ -2918,23 +2787,6 @@ Rune	__tolower1[] =
 	0x1ffc, 491,	/* ῼ ῳ */
 };
 
-/*
- * title characters are those between
- * upper and lower case. ie DZ Dz dz
- */
-static
-Rune	__totitle1[] =
-{
-	0x01c4, 501,	/* Ǆ ǅ */
-	0x01c6, 499,	/* ǆ ǅ */
-	0x01c7, 501,	/* Ǉ ǈ */
-	0x01c9, 499,	/* ǉ ǈ */
-	0x01ca, 501,	/* Ǌ ǋ */
-	0x01cc, 499,	/* ǌ ǋ */
-	0x01f1, 501,	/* Ǳ ǲ */
-	0x01f3, 499,	/* ǳ ǲ */
-};
-
 static Rune*
 rune_bsearch(Rune c, Rune *t, int n, int ne)
 {
@@ -2983,17 +2835,6 @@ toupperrune(Rune c)
 	return c;
 }
 
-Rune
-totitlerune(Rune c)
-{
-	Rune *p;
-
-	p = rune_bsearch(c, __totitle1, nelem(__totitle1)/2, 2);
-	if(p && c == p[0])
-		return c + p[1] - 500;
-	return c;
-}
-
 int
 islowerrune(Rune c)
 {
@@ -3022,11 +2863,17 @@ isupperrune(Rune c)
 	return 0;
 }
 
-int isdigitrune(Rune c){return c >= '0' && c <= '9';}
+int isdigitrune(Rune c) {
+  return c >= '0' && c <= '9';
+}
 
-int isnewline(Rune c){return c == 0xA || c == 0xD || c == 0x2028 || c == 0x2029;}
+int isnewline(Rune c) {
+  return c == 0xA || c == 0xD || c == 0x2028 || c == 0x2029;
+}
 
-int iswordchar(Rune c){return c == '_' || isdigitrune(c) || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');}
+int iswordchar(Rune c) {
+  return c == '_' || isdigitrune(c) || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
 
 int
 isalpharune(Rune c)
@@ -3045,12 +2892,6 @@ isalpharune(Rune c)
 }
 
 int
-istitlerune(Rune c)
-{
-	return isupperrune(c) && islowerrune(c);
-}
-
-int
 isspacerune(Rune c)
 {
 	Rune *p;
@@ -3060,6 +2901,54 @@ isspacerune(Rune c)
 		return 1;
 	return 0;
 }
+
+#else /* V7_ENABLE__UTF */
+
+int chartorune(Rune *rune, const char *str) {
+	*rune = *(uchar*)str;
+	return 1;
+}
+
+int fullrune(char *str UNUSED, int n) {
+	return (n <= 0) ? 0 : 1;
+}
+
+int isdigitrune(Rune c) {
+  return isdigit(c);
+}
+
+int isnewline(Rune c) {
+  return c == 0xA || c == 0xD || c == 0x2028 || c == 0x2029;
+}
+
+int iswordchar(Rune c) {
+  return c == '_' || isdigitrune(c) || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+
+int isalpharune(Rune c) { return isalpha(c); }
+int islowerrune(Rune c) { return islower(c); }
+int isspacerune(Rune c) { return isspace(c); }
+int isupperrune(Rune c) { return isupper(c); }
+
+int runetochar(char *str, Rune *rune) {
+  str[0] = (char) *rune;
+  return 1;
+}
+
+Rune tolowerrune(Rune c) { return tolower(c); }
+Rune toupperrune(Rune c) { return toupper(c); }
+int utfnlen(char *s, long m) { /* Could use strnlen but it's from POSIX 2008. */
+  long n;
+  for (n = 0; n < m && *s != '\0'; n++);
+  return n;
+}
+
+char *utfnshift(char *s, long m) {
+  for (; m > 0 && *s != '\0'; m--, s++);
+  return s;
+}
+
+#endif /* V7_ENABLE__UTF */
 /*
  * Copyright (c) 2014 Cesanta Software Limited
  * All rights reserved
@@ -4104,6 +3993,8 @@ V7_PRIVATE void init_boolean(struct v7 *v7) {
  */
 
 
+#if V7_ENABLE__Math
+
 #ifdef __WATCOM__
 int matherr(struct _exception *exc) {
   if (exc->type == DOMAIN) {
@@ -4113,6 +4004,11 @@ int matherr(struct _exception *exc) {
 }
 #endif
 
+#if V7_ENABLE__Math__abs || V7_ENABLE__Math__acos || V7_ENABLE__Math__asin ||  \
+    V7_ENABLE__Math__atan || V7_ENABLE__Math__ceil || V7_ENABLE__Math__cos ||  \
+    V7_ENABLE__Math__exp || V7_ENABLE__Math__floor || V7_ENABLE__Math__log ||  \
+    V7_ENABLE__Math__round || V7_ENABLE__Math__sin || V7_ENABLE__Math__sqrt || \
+    V7_ENABLE__Math__tan
 static val_t m_one_arg(struct v7 *v7, val_t args, double (*f)(double)) {
   val_t arg0 = v7_array_get(v7, args, 0);
   double d0 = v7_to_double(arg0);
@@ -4121,7 +4017,9 @@ static val_t m_one_arg(struct v7 *v7, val_t args, double (*f)(double)) {
 #endif
   return v7_create_number(f(d0));
 }
+#endif /* V7_ENABLE__Math__* */
 
+#if V7_ENABLE__Math__pow || V7_ENABLE__Math__atan2
 static val_t m_two_arg(struct v7 *v7, val_t args, double (*f)(double, double)) {
   val_t arg0 = v7_array_get(v7, args, 0);
   val_t arg1 = v7_array_get(v7, args, 1);
@@ -4133,6 +4031,7 @@ static val_t m_two_arg(struct v7 *v7, val_t args, double (*f)(double, double)) {
 #endif
   return v7_create_number(f(d0, d1));
 }
+#endif /* V7_ENABLE__Math__pow || V7_ENABLE__Math__atan2 */
 
 #define DEFINE_WRAPPER(name, func)                                          \
   V7_PRIVATE val_t Math_##name(struct v7 *v7, val_t this_obj, val_t args) { \
@@ -4141,28 +4040,60 @@ static val_t m_two_arg(struct v7 *v7, val_t args, double (*f)(double, double)) {
   }
 
 /* Visual studio 2012+ has round() */
-#if (defined(V7_WINDOWS) && _MSC_VER < 1700) || defined(__WATCOM__)
+#if V7_ENABLE__Math__round && \
+    ((defined(V7_WINDOWS) && _MSC_VER < 1700) || defined(__WATCOM__))
 static double round(double n) {
   return n;
 }
 #endif
 
+#if V7_ENABLE__Math__abs
 DEFINE_WRAPPER(fabs, m_one_arg)
+#endif
+#if V7_ENABLE__Math__acos
 DEFINE_WRAPPER(acos, m_one_arg)
+#endif
+#if V7_ENABLE__Math__asin
 DEFINE_WRAPPER(asin, m_one_arg)
+#endif
+#if V7_ENABLE__Math__atan
 DEFINE_WRAPPER(atan, m_one_arg)
+#endif
+#if V7_ENABLE__Math__atan2
 DEFINE_WRAPPER(atan2, m_two_arg)
+#endif
+#if V7_ENABLE__Math__ceil
 DEFINE_WRAPPER(ceil, m_one_arg)
+#endif
+#if V7_ENABLE__Math__cos
 DEFINE_WRAPPER(cos, m_one_arg)
+#endif
+#if V7_ENABLE__Math__exp
 DEFINE_WRAPPER(exp, m_one_arg)
+#endif
+#if V7_ENABLE__Math__floor
 DEFINE_WRAPPER(floor, m_one_arg)
+#endif
+#if V7_ENABLE__Math__log
 DEFINE_WRAPPER(log, m_one_arg)
+#endif
+#if V7_ENABLE__Math__pow
 DEFINE_WRAPPER(pow, m_two_arg)
+#endif
+#if V7_ENABLE__Math__round
 DEFINE_WRAPPER(round, m_one_arg)
+#endif
+#if V7_ENABLE__Math__sin
 DEFINE_WRAPPER(sin, m_one_arg)
+#endif
+#if V7_ENABLE__Math__sqrt
 DEFINE_WRAPPER(sqrt, m_one_arg)
+#endif
+#if V7_ENABLE__Math__tan
 DEFINE_WRAPPER(tan, m_one_arg)
+#endif
 
+#if V7_ENABLE__Math__random
 V7_PRIVATE val_t Math_random(struct v7 *v7, val_t this_obj, val_t args) {
   static int srand_called = 0;
 
@@ -4175,7 +4106,9 @@ V7_PRIVATE val_t Math_random(struct v7 *v7, val_t this_obj, val_t args) {
   (void) args;
   return v7_create_number((double) rand() / RAND_MAX);
 }
+#endif /* V7_ENABLE__Math__random */
 
+#if V7_ENABLE__Math__min || V7_ENABLE__Math__max
 static val_t min_max(struct v7 *v7, val_t args, int is_min) {
   double res = NAN;
   int i, len = v7_array_length(v7, args);
@@ -4189,38 +4122,79 @@ static val_t min_max(struct v7 *v7, val_t args, int is_min) {
 
   return v7_create_number(res);
 }
+#endif /* V7_ENABLE__Math__min || V7_ENABLE__Math__max */
 
+#if V7_ENABLE__Math__min
 V7_PRIVATE val_t Math_min(struct v7 *v7, val_t this_obj, val_t args) {
   (void) this_obj;
   return min_max(v7, args, 1);
 }
+#endif
 
+#if V7_ENABLE__Math__max
 V7_PRIVATE val_t Math_max(struct v7 *v7, val_t this_obj, val_t args) {
   (void) this_obj;
   return min_max(v7, args, 0);
 }
+#endif
 
 V7_PRIVATE void init_math(struct v7 *v7) {
   val_t math = v7_create_object(v7);
 
+#if V7_ENABLE__Math__abs
   set_cfunc_prop(v7, math, "abs", Math_fabs);
+#endif
+#if V7_ENABLE__Math__acos
   set_cfunc_prop(v7, math, "acos", Math_acos);
+#endif
+#if V7_ENABLE__Math__asin
   set_cfunc_prop(v7, math, "asin", Math_asin);
+#endif
+#if V7_ENABLE__Math__atan
   set_cfunc_prop(v7, math, "atan", Math_atan);
+#endif
+#if V7_ENABLE__Math__atan2
   set_cfunc_prop(v7, math, "atan2", Math_atan2);
+#endif
+#if V7_ENABLE__Math__ceil
   set_cfunc_prop(v7, math, "ceil", Math_ceil);
+#endif
+#if V7_ENABLE__Math__cos
   set_cfunc_prop(v7, math, "cos", Math_cos);
+#endif
+#if V7_ENABLE__Math__exp
   set_cfunc_prop(v7, math, "exp", Math_exp);
+#endif
+#if V7_ENABLE__Math__floor
   set_cfunc_prop(v7, math, "floor", Math_floor);
+#endif
+#if V7_ENABLE__Math__log
   set_cfunc_prop(v7, math, "log", Math_log);
+#endif
+#if V7_ENABLE__Math__max
   set_cfunc_prop(v7, math, "max", Math_max);
+#endif
+#if V7_ENABLE__Math__min
   set_cfunc_prop(v7, math, "min", Math_min);
+#endif
+#if V7_ENABLE__Math__pow
   set_cfunc_prop(v7, math, "pow", Math_pow);
+#endif
+#if V7_ENABLE__Math__random
   set_cfunc_prop(v7, math, "random", Math_random);
+#endif
+#if V7_ENABLE__Math__round
   set_cfunc_prop(v7, math, "round", Math_round);
+#endif
+#if V7_ENABLE__Math__sin
   set_cfunc_prop(v7, math, "sin", Math_sin);
+#endif
+#if V7_ENABLE__Math__sqrt
   set_cfunc_prop(v7, math, "sqrt", Math_sqrt);
+#endif
+#if V7_ENABLE__Math__tan
   set_cfunc_prop(v7, math, "tan", Math_tan);
+#endif
 
   v7_set_property(v7, math, "E", 1, 0, v7_create_number(M_E));
   v7_set_property(v7, math, "PI", 2, 0, v7_create_number(M_PI));
@@ -4234,6 +4208,8 @@ V7_PRIVATE void init_math(struct v7 *v7) {
   v7_set_property(v7, v7->global_object, "Math", 4, 0, math);
   v7_set_property(v7, v7->global_object, "NaN", 3, 0, V7_TAG_NAN);
 }
+
+#endif /* V7_ENABLE__Math */
 /*
  * Copyright (c) 2014 Cesanta Software Limited
  * All rights reserved
@@ -4413,7 +4389,7 @@ static val_t Str_toString(struct v7 *v7, val_t this_obj, val_t args) {
   return to_string(v7, i_value_of(v7, this_obj));
 }
 
-#ifndef V7_DISABLE_REGEX
+#if V7_ENABLE__RegExp
 static val_t Str_match(struct v7 *v7, val_t this_obj, val_t args) {
   val_t so, ro, arr = v7_create_null();
   long previousLastIndex = 0;
@@ -4582,7 +4558,7 @@ static val_t Str_search(struct v7 *v7, val_t this_obj, val_t args) {
   return v7_create_number(utf_shift);
 }
 
-#endif /* V7_DISABLE_REGEX */
+#endif /* V7_ENABLE__RegExp */
 
 static val_t Str_slice(struct v7 *v7, val_t this_obj, val_t args) {
   long from = 0, to = 0;
@@ -4739,7 +4715,7 @@ static val_t Str_substring(struct v7 *v7, val_t this_obj, val_t args) {
 }
 
 /* TODO(mkm): make an alternative implementation without regexps */
-#ifndef V7_DISABLE_REGEX
+#if V7_ENABLE__RegExp
 static val_t Str_split(struct v7 *v7, val_t this_obj, val_t args) {
   val_t res = v7_create_dense_array(v7);
   const char *s, *s_end;
@@ -4795,7 +4771,7 @@ static val_t Str_split(struct v7 *v7, val_t this_obj, val_t args) {
 
   return res;
 }
-#endif /* V7_DISABLE_REGEX */
+#endif /* V7_ENABLE__RegExp */
 
 V7_PRIVATE void init_string(struct v7 *v7) {
   val_t str =
@@ -4813,7 +4789,7 @@ V7_PRIVATE void init_string(struct v7 *v7) {
   set_cfunc_prop(v7, v7->string_prototype, "valueOf", Str_valueOf);
   set_cfunc_prop(v7, v7->string_prototype, "lastIndexOf", Str_lastIndexOf);
   set_cfunc_prop(v7, v7->string_prototype, "localeCompare", Str_localeCompare);
-#ifndef V7_DISABLE_REGEX
+#if V7_ENABLE__RegExp
   set_cfunc_prop(v7, v7->string_prototype, "match", Str_match);
   set_cfunc_prop(v7, v7->string_prototype, "replace", Str_replace);
   set_cfunc_prop(v7, v7->string_prototype, "search", Str_search);
@@ -5744,7 +5720,7 @@ V7_PRIVATE val_t v7_create_dense_array(struct v7 *v7) {
   return a;
 }
 
-#ifndef V7_DISABLE_REGEX
+#if V7_ENABLE__RegExp
 v7_val_t v7_create_regexp(struct v7 *v7, const char *re, size_t re_len,
                           const char *flags, size_t flags_len) {
   struct slre_prog *p = NULL;
@@ -5763,7 +5739,7 @@ v7_val_t v7_create_regexp(struct v7 *v7, const char *re, size_t re_len,
     return v7_pointer_to_value(rp) | V7_TAG_REGEXP;
   }
 }
-#endif /* V7_DISABLE_REGEX */
+#endif /* V7_ENABLE__RegExp */
 
 v7_val_t v7_create_foreign(void *p) {
   return v7_pointer_to_value(p) | V7_TAG_FOREIGN;
@@ -5865,7 +5841,7 @@ V7_PRIVATE int to_str(struct v7 *v7, val_t v, char *buf, size_t size,
         return v_sprintf_s(buf, size, "%.*s", (int) n, str);
       }
     }
-#ifndef V7_DISABLE_REGEX
+#if V7_ENABLE__RegExp
     case V7_TYPE_REGEXP_OBJECT: {
       size_t n1, n2 = 0;
       char s2[3] = {0};
@@ -8706,10 +8682,8 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
       ast_move_to_children(a, pos);
       res = v7_create_string(v7, name, name_len, 1);
       break;
-#ifdef V7_DISABLE_REGEX
-      throw_exception(v7, INTERNAL_ERROR, "Regexp support is disabled");
-#else
     case AST_REGEX: {
+#if V7_ENABLE__RegExp
       char *p;
       name = ast_get_inlined_data(a, *pos, &name_len);
       ast_move_to_children(a, pos);
@@ -8717,8 +8691,10 @@ static val_t i_eval_expr(struct v7 *v7, struct ast *a, ast_off_t *pos,
       res = v7_create_regexp(v7, name + 1, p - (name + 1), p + 1,
                              (name + name_len) - p - 1);
       break;
-    }
+#else
+      throw_exception(v7, INTERNAL_ERROR, "Regexp support is disabled");
 #endif
+    }
     case AST_IDENT: {
       struct v7_property *p;
       name = ast_get_inlined_data(a, *pos, &name_len);
@@ -9791,6 +9767,7 @@ enum v7_err v7_exec_file(struct v7 *v7, val_t *res, const char *path) {
  * license, as set out in <http://cesanta.com/>.
  */
 
+
 #include <setjmp.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -9852,7 +9829,7 @@ int nextesc(const char **p) {
   }
 }
 
-#ifndef V7_DISABLE_REGEX
+#if V7_ENABLE__RegExp
 
 /* Parser Information */
 struct slre_node {
@@ -11432,7 +11409,7 @@ int main(int argc, char **argv) {
 }
 #endif /* SLRE_TEST */
 
-#endif /* V7_DISABLE_REGEX */
+#endif /* V7_ENABLE__RegExp */
 /*
  * Copyright (c) 2014 Cesanta Software Limited
  * All rights reserved
@@ -13056,11 +13033,6 @@ V7_PRIVATE void init_date(struct v7 *v7) {
   g_tzname = tzname[0];
 }
 
-#else /* V7_ENABLE__Date */
-
-V7_PRIVATE void init_date(struct v7 *v7 UNUSED) {
-}
-
 #endif /* V7_ENABLE__Date */
 /*
  * Copyright (c) 2014 Cesanta Software Limited
@@ -13352,14 +13324,18 @@ V7_PRIVATE void init_stdlib(struct v7 *v7) {
   init_array(v7);
   init_error(v7);
   init_boolean(v7);
+#if V7_ENABLE__Math
   init_math(v7);
+#endif
   init_string(v7);
-#ifndef V7_DISABLE_REGEX
+#if V7_ENABLE__RegExp
   init_regex(v7);
 #endif
   init_number(v7);
   init_json(v7);
+#if V7_ENABLE__Date
   init_date(v7);
+#endif
 #ifndef V7_DISABLE_SOCKETS
   init_socket(v7);
 #endif
@@ -13448,7 +13424,7 @@ V7_PRIVATE void init_js_stdlib(struct v7 *v7) {
  */
 
 
-#ifndef V7_DISABLE_REGEX
+#if V7_ENABLE__RegExp
 
 V7_PRIVATE val_t to_string(struct v7 *, val_t);
 
@@ -13611,7 +13587,7 @@ V7_PRIVATE void init_regex(struct v7 *v7) {
                   V7_PROPERTY_GETTER | V7_PROPERTY_SETTER, lastIndex);
 }
 
-#endif /* V7_DISABLE_REGEX */
+#endif /* V7_ENABLE__RegExp */
 /*
  * Copyright (c) 2015 Cesanta Software Limited
  * All rights reserved
