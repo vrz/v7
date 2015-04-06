@@ -128,6 +128,13 @@ V7_PRIVATE void *v7_to_pointer(val_t v) {
   return (void *) (uintptr_t)(v & 0xFFFFFFFFFFFFUL);
 }
 
+v7_cfunction_t v7_to_cfunction(val_t v) {
+  /* Implementation is identical to v7_to_pointer but is separate since
+   * object pointers are not directly convertible to function pointers
+   * according to ISO C and generates a warning in -Wpedantic mode. */
+  return (v7_cfunction_t)(v & 0xFFFFFFFFFFFFUL);
+}
+
 val_t v7_object_to_value(struct v7_object *o) {
   if (o == NULL) {
     return V7_NULL;
@@ -145,10 +152,6 @@ val_t v7_function_to_value(struct v7_function *o) {
 
 struct v7_function *v7_to_function(val_t v) {
   return (struct v7_function *) v7_to_pointer(v);
-}
-
-v7_cfunction_t v7_to_cfunction(val_t v) {
-  return (v7_cfunction_t) v7_to_pointer(v);
 }
 
 v7_val_t v7_create_cfunction(v7_cfunction_t f) {
@@ -665,11 +668,12 @@ int v7_set_v(struct v7 *v7, val_t obj, val_t name, val_t val) {
   return -1;
 }
 
-int v7_set(struct v7 *v7, val_t obj, const char *name, size_t len, val_t val) {
+int v7_set(struct v7 *v7, val_t obj, const char *name, size_t len,
+           unsigned int attrs, val_t val) {
   struct v7_property *p = v7_get_own_property(v7, obj, name, len);
   if (p == NULL || !(p->attributes & V7_PROPERTY_READ_ONLY)) {
-    return v7_set_property(v7, obj, name, len, p == NULL ? 0 : p->attributes,
-                           val);
+    return v7_set_property(v7, obj, name, len,
+                           p == NULL ? attrs : p->attributes, val);
   }
   return -1;
 }
@@ -766,8 +770,8 @@ int v7_del_property(struct v7 *v7, val_t obj, const char *name, size_t len) {
   return -1;
 }
 
-V7_PRIVATE v7_val_t
-v7_create_cfunction_object(struct v7 *v7, v7_cfunction_t f, int num_args) {
+v7_val_t v7_create_cfunction_object(struct v7 *v7, v7_cfunction_t f,
+                                    int num_args) {
   val_t obj = create_object(v7, v7->function_prototype);
   struct gc_tmp_frame tf = new_tmp_frame(v7);
   tmp_stack_push(&tf, &obj);
@@ -968,7 +972,7 @@ int v7_array_set(struct v7 *v7, val_t arr, unsigned long index, val_t v) {
     } else {
       char buf[20];
       int n = v_sprintf_s(buf, sizeof(buf), "%lu", index);
-      res = v7_set(v7, arr, buf, n, v);
+      res = v7_set(v7, arr, buf, n, 0, v);
     }
   }
   return res;

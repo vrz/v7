@@ -37,13 +37,11 @@
 
 #define _POSIX_C_SOURCE 200809L
 
-#include <sys/stat.h>
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
 #include <float.h>
 #include <limits.h>
-#include <locale.h>
 #include <math.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -51,7 +49,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <setjmp.h>
-#include <time.h>
 
 /* Public API. Implemented in api.c */
 #include "../v7.h"
@@ -70,10 +67,7 @@ typedef unsigned char uint8_t;
 typedef unsigned long uintptr_t;
 #define __func__ ""
 #else
-#include <sys/time.h>
 #include <stdint.h>
-#include <unistd.h>
-#include <fcntl.h>
 #endif
 
 #include "v7_features.h"
@@ -217,9 +211,6 @@ struct v7 {
   val_t number_prototype;
   val_t date_prototype;
   val_t function_prototype;
-#ifndef V7_DISABLE_SOCKETS
-  val_t socket_prototype;
-#endif
 
   /*
    * Stack of execution contexts.
